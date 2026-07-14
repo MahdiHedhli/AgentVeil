@@ -225,6 +225,82 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert_eq!(bypass.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
 
+    let composed_bypasses = [
+        r"\uFF53\uFF4B-proj-A1b2C3d4E5f6G7h8I9j0",
+        r"sk-proj-A1\u002Eb2\u002EC3\u002Ed4\u002EE5\u002Ef6\u002EG7\u002Eh8\u002EI9\u002Ej0",
+        "%73%6B%2D%70%72%6F%6A%2D%41%2E%31%2E%62%2E%32%2E%43%2E%33%2E%64%2E%34%2E%45%2E%35%2E%66%2E%36%2E%47%2E%68%2E%38%2E%49%2E%39%2E%6A%2E%30",
+        r"\\u0073k-proj-A1b2C3d4E5f6G7h8I9j0",
+        "Xsk-proj-A1b2C3d4E5f6G7h8I9j0",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC",
+    ];
+    for candidate in composed_bypasses {
+        let response = client
+            .post(&endpoint)
+            .header("x-agentveil-session", LOCAL_TOKEN)
+            .json(&codex_request(candidate, false))
+            .send()
+            .await
+            .expect("bypass request should return local error");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
+    }
+
+    let invalid_percent =
+        "%73%6B%2D%70%72%6F%6A%2D%41%31%62%32%43%33%64%34%45%35%66%36%47%37%68%38%49%39%6A%30%FF";
+    let invalid_percent_response = client
+        .post(&endpoint)
+        .header("x-agentveil-session", LOCAL_TOKEN)
+        .json(&codex_request(invalid_percent, false))
+        .send()
+        .await
+        .expect("invalid percent request should fail closed");
+    assert_eq!(
+        invalid_percent_response.status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
+
+    let structural_secret = format!("{}{}", "ghp_", "Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5");
+    let mut structural_payload = codex_request("safe", false);
+    structural_payload["text"] = json!({
+        "format": {
+            "type": "json_schema",
+            "strict": true,
+            "name": "synthetic",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    structural_secret.clone(): {"type": "string"}
+                }
+            }
+        }
+    });
+    let structural_response = client
+        .post(&endpoint)
+        .header("x-agentveil-session", LOCAL_TOKEN)
+        .json(&structural_payload)
+        .send()
+        .await
+        .expect("structural secret should return local error");
+    assert_eq!(
+        structural_response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
+
+    let mut metadata_payload = codex_request("safe", false);
+    metadata_payload["input"][0]["internal_chat_message_metadata_passthrough"] =
+        json!({"turn_id": structural_secret});
+    let metadata_response = client
+        .post(&endpoint)
+        .header("x-agentveil-session", LOCAL_TOKEN)
+        .json(&metadata_payload)
+        .send()
+        .await
+        .expect("metadata secret should return local error");
+    assert_eq!(metadata_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
+
     let tool_response = client
         .post(&endpoint)
         .header("x-agentveil-session", LOCAL_TOKEN)

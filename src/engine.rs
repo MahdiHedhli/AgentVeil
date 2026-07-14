@@ -172,7 +172,9 @@ where
                 };
                 rewritten.replace_range(finding.source_span, &replacement);
             }
-            request.replace_text(plan.target_index, rewritten)?;
+            if rewritten != plan.original {
+                request.replace_text(plan.target_index, rewritten)?;
+            }
         }
         Ok(())
     }
@@ -412,6 +414,22 @@ mod tests {
         let body = String::from_utf8(forward.into_body()).expect("body should be UTF-8");
         assert!(!body.contains("ava.agentveil@example.test"));
         assert!(!body.contains("10.24.8.15"));
+    }
+
+    #[test]
+    fn overlapping_findings_protect_the_union_span() {
+        let raw = "ava@PROJECT-VEIL-DEMO.com";
+        let mut engine = engine();
+        let outcome = engine
+            .protect(&request(raw, "message"), &scope(), 0)
+            .expect("request should protect");
+        let ProtectionOutcome::Forward(forward) = outcome else {
+            panic!("masking should forward");
+        };
+        let body = String::from_utf8(forward.into_body()).expect("body should be UTF-8");
+        assert!(!body.contains("ava@"));
+        assert!(!body.contains(".com"));
+        assert!(body.contains("[REDACTED_TERM]"));
     }
 
     #[test]

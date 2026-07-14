@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::net::Ipv4Addr;
 use std::ops::Range;
 
@@ -39,42 +40,42 @@ impl Scanner {
                 false,
             ),
             (
-                r"(?-u:\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b)",
+                r"(?-u:sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,})",
                 DataClass::Credentials,
                 DetectorId::OpenAiApiKey,
                 Confidence::High,
                 true,
             ),
             (
-                r"(?-u:\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b)",
+                r"(?-u:(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}))",
                 DataClass::Credentials,
                 DetectorId::GithubToken,
                 Confidence::High,
                 true,
             ),
             (
-                r"(?-u:\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)",
+                r"(?-u:(?:AKIA|ASIA)[A-Z0-9]{16})",
                 DataClass::Credentials,
                 DetectorId::AwsAccessKeyId,
                 Confidence::High,
                 true,
             ),
             (
-                r"(?-u:\bAIza[A-Za-z0-9_-]{35}\b)",
+                r"(?-u:AIza[A-Za-z0-9_-]{35})",
                 DataClass::Credentials,
                 DetectorId::GoogleApiKey,
                 Confidence::High,
                 true,
             ),
             (
-                r"(?-u:\b(?:sk|rk)_(?:test|live)_[A-Za-z0-9]{16,}\b)",
+                r"(?-u:(?:sk|rk)_(?:test|live)_[A-Za-z0-9]{16,})",
                 DataClass::Credentials,
                 DetectorId::StripeSecretKey,
                 Confidence::High,
                 true,
             ),
             (
-                r"(?-u:\b(?:xox[bpar]-|xapp-|xwfp-)[A-Za-z0-9-]{16,}\b)",
+                r"(?-u:(?:xox[bpar]-|xapp-|xwfp-)[A-Za-z0-9-]{16,})",
                 DataClass::Credentials,
                 DetectorId::SlackToken,
                 Confidence::High,
@@ -95,7 +96,7 @@ impl Scanner {
                 true,
             ),
             (
-                r"(?-u:\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{8,}\b)",
+                r"(?-u:eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{8,})",
                 DataClass::Jwt,
                 DetectorId::Jwt,
                 Confidence::High,
@@ -141,21 +142,28 @@ impl Scanner {
 
     pub fn scan(&self, source: &str) -> Result<Vec<Finding>, DetectorError> {
         let normalized = ScanView::normalize(source)?;
-        let mut views = vec![(normalized.clone(), false)];
-        if let Some(decoded) = normalized.decode_json_escapes()? {
-            views.push((decoded, false));
-        }
-        if let Some(decoded) = normalized.decode_percent_encoding()? {
-            views.push((decoded, false));
-        }
-        if let Some(collapsed) = normalized.collapse_candidate_separators()? {
-            views.push((collapsed, true));
+        let regular_views = composed_views(normalized)?;
+        let mut views = Vec::with_capacity(regular_views.len().saturating_mul(2));
+        for view in regular_views {
+            if views.len() >= MAX_SCAN_VIEWS {
+                return Err(DetectorError::NormalizationLimit);
+            }
+            views.push((view.clone(), false));
+            if let Some(collapsed) = view.collapse_candidate_separators()? {
+                if views.len() >= MAX_SCAN_VIEWS {
+                    return Err(DetectorError::NormalizationLimit);
+                }
+                views.push((collapsed, true));
+            }
         }
 
         let mut findings = Vec::new();
         for (view, secret_view) in &views {
             for pattern in &self.patterns {
-                if *secret_view && !pattern.secret_only {
+                if *secret_view
+                    && !pattern.secret_only
+                    && pattern.data_class != DataClass::TokenNamespace
+                {
                     continue;
                 }
                 for candidate in pattern.regex.find_iter(&view.text) {
@@ -203,13 +211,24 @@ impl Scanner {
             let start = cursor + relative;
             let label_start = start + BEGIN.len();
             let Some(label_end_relative) = view.text[label_start..].find("-----") else {
+                findings.push(view.finding(
+                    start..view.text.len(),
+                    DataClass::PrivateKey,
+                    DetectorId::PemPrivateKey,
+                    Confidence::High,
+                )?);
                 break;
             };
             let label_end = label_start + label_end_relative;
             let label = &view.text[label_start..label_end];
             if !matches!(
                 label,
-                "PRIVATE KEY" | "RSA PRIVATE KEY" | "EC PRIVATE KEY" | "OPENSSH PRIVATE KEY"
+                "PRIVATE KEY"
+                    | "ENCRYPTED PRIVATE KEY"
+                    | "RSA PRIVATE KEY"
+                    | "DSA PRIVATE KEY"
+                    | "EC PRIVATE KEY"
+                    | "OPENSSH PRIVATE KEY"
             ) {
                 cursor = label_end + 5;
                 continue;
@@ -217,6 +236,12 @@ impl Scanner {
             let end_marker = format!("-----END {label}-----");
             let body_start = label_end + 5;
             let Some(end_relative) = view.text[body_start..].find(&end_marker) else {
+                findings.push(view.finding(
+                    start..view.text.len(),
+                    DataClass::PrivateKey,
+                    DetectorId::PemPrivateKey,
+                    Confidence::High,
+                )?);
                 break;
             };
             let end = body_start + end_relative + end_marker.len();
@@ -376,6 +401,39 @@ impl Scanner {
     }
 }
 
+const MAX_DECODE_LAYERS: u8 = 2;
+const MAX_REGULAR_VIEWS: usize = 8;
+const MAX_SCAN_VIEWS: usize = 12;
+
+fn composed_views(root: ScanView) -> Result<Vec<ScanView>, DetectorError> {
+    let max_output_bytes = root.source_by_byte.len().saturating_mul(4).max(4);
+    let mut queue = VecDeque::from([(root, 0_u8)]);
+    let mut seen = HashSet::new();
+    let mut views = Vec::new();
+    while let Some((view, depth)) = queue.pop_front() {
+        if !seen.insert((view.text.clone(), view.source_by_byte.clone())) {
+            continue;
+        }
+        if views.len() >= MAX_REGULAR_VIEWS {
+            return Err(DetectorError::NormalizationLimit);
+        }
+        if view.text.len() > max_output_bytes {
+            return Err(DetectorError::NormalizationLimit);
+        }
+        views.push(view.clone());
+        if depth >= MAX_DECODE_LAYERS {
+            continue;
+        }
+        if let Some(decoded) = view.decode_json_escapes()? {
+            queue.push_back((decoded.canonicalize()?, depth + 1));
+        }
+        if let Some(decoded) = view.decode_percent_encoding()? {
+            queue.push_back((decoded.canonicalize()?, depth + 1));
+        }
+    }
+    Ok(views)
+}
+
 #[derive(Clone)]
 struct ScanView {
     text: String,
@@ -431,6 +489,25 @@ impl ScanView {
         Self::from_bytes(output, mappings)
     }
 
+    fn canonicalize(&self) -> Result<Self, DetectorError> {
+        let mut text = String::with_capacity(self.text.len());
+        let mut source_by_byte = Vec::with_capacity(self.text.len());
+        for (start, character) in self.text.char_indices() {
+            let end = start + character.len_utf8();
+            if is_invisible_control(character) {
+                continue;
+            }
+            let source = self.combined_source(start..end)?;
+            let normalized: String = character.to_string().nfkc().collect();
+            append_with_source(&mut text, &mut source_by_byte, &normalized, source);
+        }
+        Self {
+            text,
+            source_by_byte,
+        }
+        .remove_structural_continuations()
+    }
+
     fn decode_json_escapes(&self) -> Result<Option<Self>, DetectorError> {
         let bytes = self.text.as_bytes();
         let mut output = Vec::with_capacity(bytes.len());
@@ -481,8 +558,11 @@ impl ScanView {
             mappings.push(self.source_by_byte[index].clone());
             index += 1;
         }
-        if !changed || std::str::from_utf8(&output).is_err() {
+        if !changed {
             return Ok(None);
+        }
+        if std::str::from_utf8(&output).is_err() {
+            return Err(DetectorError::InvalidPercentEncoding);
         }
         Self::from_bytes(output, mappings).map(Some)
     }
@@ -671,43 +751,41 @@ pub fn resolve_overlaps(
     findings: Vec<(Finding, crate::domain::Action)>,
 ) -> Vec<(Finding, crate::domain::Action)> {
     let mut ordered = findings;
-    ordered.sort_by(
-        |(left_finding, left_action), (right_finding, right_action)| {
-            right_action
-                .precedence()
-                .cmp(&left_action.precedence())
-                .then_with(|| {
-                    (right_finding.source_span.end - right_finding.source_span.start)
-                        .cmp(&(left_finding.source_span.end - left_finding.source_span.start))
-                })
-                .then_with(|| {
-                    left_finding
-                        .source_span
-                        .start
-                        .cmp(&right_finding.source_span.start)
-                })
-        },
-    );
-    let mut selected: Vec<(Finding, crate::domain::Action)> = Vec::new();
-    let mut seen = HashSet::new();
-    for candidate in ordered {
-        let key = (
-            candidate.0.source_span.start,
-            candidate.0.source_span.end,
-            candidate.0.data_class,
-        );
-        if seen.contains(&key)
-            || selected
-                .iter()
-                .any(|(finding, _)| finding.overlaps(&candidate.0))
+    ordered.sort_by_key(|(finding, _)| (finding.source_span.start, finding.source_span.end));
+    let mut merged = Vec::new();
+    let mut index = 0;
+    while index < ordered.len() {
+        let component_start = ordered[index].0.source_span.start;
+        let mut component_end = ordered[index].0.source_span.end;
+        let mut component_end_index = index + 1;
+        while component_end_index < ordered.len()
+            && ordered[component_end_index].0.source_span.start < component_end
         {
-            continue;
+            component_end = component_end.max(ordered[component_end_index].0.source_span.end);
+            component_end_index += 1;
         }
-        seen.insert(key);
-        selected.push(candidate);
+        let strongest = ordered[index..component_end_index]
+            .iter()
+            .max_by(
+                |(left_finding, left_action), (right_finding, right_action)| {
+                    left_action
+                        .precedence()
+                        .cmp(&right_action.precedence())
+                        .then_with(|| {
+                            (left_finding.source_span.end - left_finding.source_span.start).cmp(
+                                &(right_finding.source_span.end - right_finding.source_span.start),
+                            )
+                        })
+                },
+            )
+            .cloned();
+        if let Some((mut finding, action)) = strongest {
+            finding.source_span = component_start..component_end;
+            merged.push((finding, action));
+        }
+        index = component_end_index;
     }
-    selected.sort_by_key(|(finding, _)| finding.source_span.start);
-    selected
+    merged
 }
 
 #[derive(Debug, Error)]
@@ -718,6 +796,10 @@ pub enum DetectorError {
     InvalidNormalizedUtf8,
     #[error("normalization source map is invalid")]
     InvalidSourceMap,
+    #[error("normalization exceeded the bounded decode budget")]
+    NormalizationLimit,
+    #[error("percent-decoded data is not valid UTF-8")]
+    InvalidPercentEncoding,
 }
 
 #[cfg(test)]
@@ -784,6 +866,46 @@ mod tests {
     }
 
     #[test]
+    fn normalization_composes_decoding_canonicalization_and_collapse() {
+        let candidates = [
+            r"\uFF53\uFF4B-proj-A1b2C3d4E5f6G7h8I9j0",
+            r"sk-proj-A1\u002Eb2\u002EC3\u002Ed4\u002EE5\u002Ef6\u002EG7\u002Eh8\u002EI9\u002Ej0",
+            "%73%6B%2D%70%72%6F%6A%2D%41%2E%31%2E%62%2E%32%2E%43%2E%33%2E%64%2E%34%2E%45%2E%35%2E%66%2E%36%2E%47%2E%68%2E%38%2E%49%2E%39%2E%6A%2E%30",
+            r"\\u0073k-proj-A1b2C3d4E5f6G7h8I9j0",
+        ];
+        for candidate in candidates {
+            let findings = scanner().scan(candidate).expect("scan should succeed");
+            assert!(
+                findings
+                    .iter()
+                    .any(|finding| finding.detector == DetectorId::OpenAiApiKey),
+                "composed candidate should be detected"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_percent_utf8_fails_closed() {
+        let candidate = "%73%6B%2D%70%72%6F%6A%2D%41%31%62%32%43%33%64%34%45%35%66%36%47%37%68%38%49%39%6A%30%FF";
+        assert!(matches!(
+            scanner().scan(candidate),
+            Err(DetectorError::InvalidPercentEncoding)
+        ));
+    }
+
+    #[test]
+    fn credential_prefixes_are_detected_inside_adjacent_text() {
+        let findings = scanner()
+            .scan("Xsk-proj-A1b2C3d4E5f6G7h8I9j0")
+            .expect("scan should succeed");
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.detector == DetectorId::OpenAiApiKey)
+        );
+    }
+
+    #[test]
     fn normalization_maps_fullwidth_compatibility_to_source() {
         let findings = scanner()
             .scan("contact ａｖａ@example.test")
@@ -799,23 +921,19 @@ mod tests {
     }
 
     #[test]
-    fn detects_complete_private_key_only() {
+    fn blocks_complete_partial_and_encrypted_private_keys() {
         let complete = "-----BEGIN PRIVATE KEY-----\nSYNTHETIC\n-----END PRIVATE KEY-----";
         let incomplete = "-----BEGIN PRIVATE KEY-----\nSYNTHETIC";
-        assert!(
-            scanner()
-                .scan(complete)
-                .expect("scan should succeed")
-                .iter()
-                .any(|finding| finding.data_class == DataClass::PrivateKey)
-        );
-        assert!(
-            !scanner()
-                .scan(incomplete)
-                .expect("scan should succeed")
-                .iter()
-                .any(|finding| finding.data_class == DataClass::PrivateKey)
-        );
+        let encrypted = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC";
+        for candidate in [complete, incomplete, encrypted] {
+            assert!(
+                scanner()
+                    .scan(candidate)
+                    .expect("scan should succeed")
+                    .iter()
+                    .any(|finding| finding.data_class == DataClass::PrivateKey)
+            );
+        }
     }
 
     #[test]

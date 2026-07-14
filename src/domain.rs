@@ -135,6 +135,7 @@ pub enum FieldClass {
     ToolSchemaText,
     ReasoningSummary,
     ClientMetadata,
+    StructuralMetadata,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

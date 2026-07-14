@@ -17,6 +17,7 @@ pub enum RewriteMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextTarget {
     path: Vec<PathSegment>,
+    literal: Option<String>,
     pub field_class: FieldClass,
     pub mode: RewriteMode,
 }
@@ -60,9 +61,15 @@ impl ValidatedRequest {
         )?;
         require_string(root, "model")?;
         require_bool(root, "store")?;
+        if root.get("store").and_then(Value::as_bool) != Some(false) {
+            return Err(PayloadError::InvalidFieldValue("store"));
+        }
+        require_string(root, "tool_choice")?;
+        require_bool(root, "parallel_tool_calls")?;
         if root.get("stream").and_then(Value::as_bool) != Some(true) {
             return Err(PayloadError::StreamingRequired);
         }
+        validate_top_level_controls(root)?;
 
         let mut targets = Vec::new();
         if let Some(instructions) = root.get("instructions") {
@@ -115,6 +122,12 @@ impl ValidatedRequest {
             }
         }
 
+        // Every string byte in the accepted request is either a rewrite target
+        // above or a fail-closed structural target here. This makes additions
+        // to a known nested object safe by default and prevents identifiers,
+        // encrypted replay fields, or control metadata from becoming a bypass.
+        collect_untracked_strings(&value, Vec::new(), &mut targets);
+
         Ok(Self { value, targets })
     }
 
@@ -122,7 +135,10 @@ impl ValidatedRequest {
         &self.targets
     }
 
-    pub fn text(&self, target: &TextTarget) -> Result<&str, PayloadError> {
+    pub fn text<'a>(&'a self, target: &'a TextTarget) -> Result<&'a str, PayloadError> {
+        if let Some(literal) = target.literal.as_deref() {
+            return Ok(literal);
+        }
         locate(&self.value, &target.path)?
             .as_str()
             .ok_or(PayloadError::TargetChangedType)
@@ -137,6 +153,9 @@ impl ValidatedRequest {
             .targets
             .get(target_index)
             .ok_or(PayloadError::TargetMissing)?;
+        if target.literal.is_some() {
+            return Err(PayloadError::TargetIsStructuralLiteral);
+        }
         let value = locate_mut(&mut self.value, &target.path)?;
         if !value.is_string() {
             return Err(PayloadError::TargetChangedType);
@@ -158,8 +177,18 @@ impl TextTarget {
     ) -> Self {
         Self {
             path: path.into_iter().collect(),
+            literal: None,
             field_class,
             mode,
+        }
+    }
+
+    fn structural_literal(value: String) -> Self {
+        Self {
+            path: Vec::new(),
+            literal: Some(value),
+            field_class: FieldClass::StructuralMetadata,
+            mode: RewriteMode::BlockOnly,
         }
     }
 }
@@ -254,6 +283,8 @@ fn collect_input_item(
                 &["id", "type", "role", "tools"],
                 PayloadError::UnsupportedItemField,
             )?;
+            validate_common_item_fields(object)?;
+            require_string(object, "role")?;
             let mut path = base;
             path.push(PathSegment::key("tools"));
             collect_tool_array(
@@ -294,6 +325,8 @@ fn collect_message(
         ],
         PayloadError::UnsupportedItemField,
     )?;
+    validate_common_item_fields(object)?;
+    require_string(object, "role")?;
     let content = object
         .get("content")
         .ok_or(PayloadError::MissingField("content"))?;
@@ -323,6 +356,9 @@ fn collect_agent_message(
         ],
         PayloadError::UnsupportedItemField,
     )?;
+    validate_common_item_fields(object)?;
+    require_string(object, "author")?;
+    require_string(object, "recipient")?;
     let content = object
         .get("content")
         .and_then(Value::as_array)
@@ -350,7 +386,8 @@ fn collect_agent_message(
                 part_object,
                 &["type", "encrypted_content"],
                 PayloadError::UnsupportedContentPartField,
-            )?,
+            )
+            .and_then(|()| require_string(part_object, "encrypted_content"))?,
             _ => return Err(PayloadError::UnsupportedContentPart),
         }
     }
@@ -405,6 +442,8 @@ fn collect_output_payload(
     allowed_keys: &[&str],
 ) -> Result<(), PayloadError> {
     ensure_allowed_keys(object, allowed_keys, PayloadError::UnsupportedItemField)?;
+    validate_common_item_fields(object)?;
+    require_string(object, "call_id")?;
     let output = object
         .get("output")
         .ok_or(PayloadError::MissingField("output"))?;
@@ -436,7 +475,8 @@ fn collect_output_payload(
                 part_object,
                 &["type", "encrypted_content"],
                 PayloadError::UnsupportedContentPartField,
-            )?,
+            )
+            .and_then(|()| require_string(part_object, "encrypted_content"))?,
             Some("input_image") => return Err(PayloadError::UnsupportedMedia),
             _ => return Err(PayloadError::UnsupportedContentPart),
         }
@@ -454,6 +494,9 @@ fn collect_string_field(
     allowed_keys: &[&str],
 ) -> Result<(), PayloadError> {
     ensure_allowed_keys(object, allowed_keys, PayloadError::UnsupportedItemField)?;
+    validate_common_item_fields(object)?;
+    require_string(object, "call_id")?;
+    require_string(object, "name")?;
     require_string(object, field)?;
     base.push(PathSegment::key(field));
     targets.push(TextTarget::new(base, field_class, mode));
@@ -477,6 +520,9 @@ fn collect_reasoning(
         ],
         PayloadError::UnsupportedItemField,
     )?;
+    validate_common_item_fields(object)?;
+    require_optional_string(object, "encrypted_content")?;
+    validate_optional_metadata(object)?;
     for field in ["summary", "content"] {
         let Some(parts) = object.get(field) else {
             continue;
@@ -516,6 +562,7 @@ fn collect_known_structural_item(
     base: Vec<PathSegment>,
     targets: &mut Vec<TextTarget>,
 ) -> Result<(), PayloadError> {
+    validate_common_item_fields(object)?;
     for (key, value) in object {
         if matches!(
             key.as_str(),
@@ -540,7 +587,146 @@ fn collect_compaction(object: &Map<String, Value>) -> Result<(), PayloadError> {
             "internal_chat_message_metadata_passthrough",
         ],
         PayloadError::UnsupportedItemField,
-    )
+    )?;
+    validate_common_item_fields(object)?;
+    match object.get("type").and_then(Value::as_str) {
+        Some("compaction_trigger") => {
+            if object.contains_key("encrypted_content") {
+                return Err(PayloadError::InvalidFieldType("encrypted_content"));
+            }
+        }
+        Some("context_compaction") => require_optional_string(object, "encrypted_content")?,
+        _ => require_string(object, "encrypted_content")?,
+    }
+    validate_optional_metadata(object)
+}
+
+fn validate_top_level_controls(root: &Map<String, Value>) -> Result<(), PayloadError> {
+    if root.get("tool_choice").and_then(Value::as_str) != Some("auto") {
+        return Err(PayloadError::InvalidFieldValue("tool_choice"));
+    }
+    if let Some(reasoning) = root.get("reasoning")
+        && !reasoning.is_null()
+    {
+        let reasoning = reasoning
+            .as_object()
+            .ok_or(PayloadError::InvalidFieldType("reasoning"))?;
+        ensure_allowed_keys(
+            reasoning,
+            &["effort", "summary", "context"],
+            PayloadError::UnsupportedControlField,
+        )?;
+        for field in ["effort", "summary", "context"] {
+            require_optional_string(reasoning, field)?;
+        }
+    }
+    if let Some(stream_options) = root.get("stream_options") {
+        let stream_options = stream_options
+            .as_object()
+            .ok_or(PayloadError::InvalidFieldType("stream_options"))?;
+        ensure_allowed_keys(
+            stream_options,
+            &["reasoning_summary_delivery"],
+            PayloadError::UnsupportedControlField,
+        )?;
+        require_string(stream_options, "reasoning_summary_delivery")?;
+    }
+    if let Some(include) = root.get("include") {
+        let include = include
+            .as_array()
+            .ok_or(PayloadError::InvalidFieldType("include"))?;
+        if include.iter().any(|entry| !entry.is_string()) {
+            return Err(PayloadError::InvalidFieldType("include entry"));
+        }
+        if include.len() > 4
+            || include
+                .iter()
+                .any(|entry| entry.as_str() != Some("reasoning.encrypted_content"))
+        {
+            return Err(PayloadError::InvalidFieldValue("include"));
+        }
+    }
+    require_optional_string(root, "service_tier")?;
+    require_optional_string(root, "prompt_cache_key")?;
+    if let Some(text) = root.get("text")
+        && !text.is_null()
+    {
+        validate_text_controls(
+            text.as_object()
+                .ok_or(PayloadError::InvalidFieldType("text"))?,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_text_controls(object: &Map<String, Value>) -> Result<(), PayloadError> {
+    ensure_allowed_keys(
+        object,
+        &["verbosity", "format"],
+        PayloadError::UnsupportedControlField,
+    )?;
+    require_optional_string(object, "verbosity")?;
+    let Some(format) = object.get("format") else {
+        return Ok(());
+    };
+    if format.is_null() {
+        return Ok(());
+    }
+    let format = format
+        .as_object()
+        .ok_or(PayloadError::InvalidFieldType("text.format"))?;
+    require_string(format, "type")?;
+    match format.get("type").and_then(Value::as_str) {
+        Some("text") => {
+            ensure_allowed_keys(format, &["type"], PayloadError::UnsupportedControlField)?
+        }
+        Some("json_schema") => {
+            ensure_allowed_keys(
+                format,
+                &["type", "strict", "schema", "name"],
+                PayloadError::UnsupportedControlField,
+            )?;
+            require_bool(format, "strict")?;
+            require_string(format, "name")?;
+            if !format.contains_key("schema") {
+                return Err(PayloadError::MissingField("schema"));
+            }
+        }
+        _ => return Err(PayloadError::InvalidFieldValue("text.format.type")),
+    }
+    Ok(())
+}
+
+fn validate_optional_metadata(object: &Map<String, Value>) -> Result<(), PayloadError> {
+    let Some(metadata) = object.get("internal_chat_message_metadata_passthrough") else {
+        return Ok(());
+    };
+    if metadata.is_null() {
+        return Ok(());
+    }
+    let metadata = metadata.as_object().ok_or(PayloadError::InvalidFieldType(
+        "internal_chat_message_metadata_passthrough",
+    ))?;
+    ensure_allowed_keys(metadata, &["turn_id"], PayloadError::UnsupportedItemField)?;
+    require_optional_string(metadata, "turn_id")
+}
+
+fn validate_common_item_fields(object: &Map<String, Value>) -> Result<(), PayloadError> {
+    for field in [
+        "id",
+        "type",
+        "role",
+        "phase",
+        "author",
+        "recipient",
+        "call_id",
+        "name",
+        "namespace",
+        "status",
+    ] {
+        require_optional_string(object, field)?;
+    }
+    validate_optional_metadata(object)
 }
 
 fn collect_tool_array(
@@ -628,6 +814,36 @@ fn collect_all_strings(
     Ok(())
 }
 
+fn collect_untracked_strings(value: &Value, path: Vec<PathSegment>, targets: &mut Vec<TextTarget>) {
+    match value {
+        Value::String(_) => {
+            if !targets.iter().any(|target| target.path == path) {
+                targets.push(TextTarget::new(
+                    path,
+                    FieldClass::StructuralMetadata,
+                    RewriteMode::BlockOnly,
+                ));
+            }
+        }
+        Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                let mut child_path = path.clone();
+                child_path.push(PathSegment::Index(index));
+                collect_untracked_strings(child, child_path, targets);
+            }
+        }
+        Value::Object(object) => {
+            for (key, child) in object {
+                targets.push(TextTarget::structural_literal(key.clone()));
+                let mut child_path = path.clone();
+                child_path.push(PathSegment::Key(key.clone()));
+                collect_untracked_strings(child, child_path, targets);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
+}
+
 fn require_string(object: &Map<String, Value>, field: &'static str) -> Result<(), PayloadError> {
     if object.get(field).and_then(Value::as_str).is_none() {
         return Err(if object.contains_key(field) {
@@ -646,6 +862,19 @@ fn require_bool(object: &Map<String, Value>, field: &'static str) -> Result<(), 
         } else {
             PayloadError::MissingField(field)
         });
+    }
+    Ok(())
+}
+
+fn require_optional_string(
+    object: &Map<String, Value>,
+    field: &'static str,
+) -> Result<(), PayloadError> {
+    if object
+        .get(field)
+        .is_some_and(|value| !value.is_null() && !value.is_string())
+    {
+        return Err(PayloadError::InvalidFieldType(field));
     }
     Ok(())
 }
@@ -805,10 +1034,14 @@ pub enum PayloadError {
     MissingField(&'static str),
     #[error("request field {0} has an invalid type")]
     InvalidFieldType(&'static str),
+    #[error("request field {0} has an unsupported value")]
+    InvalidFieldValue(&'static str),
     #[error("Responses SSE streaming is required")]
     StreamingRequired,
     #[error("unsupported top-level request field {0}")]
     UnsupportedTopLevelField(String),
+    #[error("unsupported request-control field {0}")]
+    UnsupportedControlField(String),
     #[error("input item must be an object")]
     InputItemMustBeObject,
     #[error("input item has no type")]
@@ -829,6 +1062,8 @@ pub enum PayloadError {
     TargetMissing,
     #[error("validated target changed type")]
     TargetChangedType,
+    #[error("structural literal target cannot be rewritten")]
+    TargetIsStructuralLiteral,
     #[error("sanitized request serialization failed")]
     Serialize(#[source] serde_json::Error),
 }
@@ -855,27 +1090,44 @@ mod tests {
     }
 
     #[test]
-    fn collects_message_and_function_output_text_only() {
+    fn classifies_every_string_and_rewrites_message_text_only() {
         let bytes = request(serde_json::json!([
             {"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},
             {"type":"function_call_output","call_id":"safe-id","output":"tool result"}
         ]));
         let mut parsed = ValidatedRequest::parse(&bytes).expect("fixture should validate");
-        assert_eq!(parsed.targets().len(), 3);
+        let original: Value = serde_json::from_slice(&bytes).expect("fixture should parse");
+        assert_eq!(parsed.targets().len(), count_strings(&original));
+        let message_target = parsed
+            .targets()
+            .iter()
+            .position(|target| parsed.text(target).ok() == Some("hello"))
+            .expect("message target should exist");
         assert_eq!(
             parsed
-                .text(&parsed.targets()[1])
+                .text(&parsed.targets()[message_target])
                 .expect("target should exist"),
             "hello"
         );
         parsed
-            .replace_text(1, "protected".to_string())
+            .replace_text(message_target, "protected".to_string())
             .expect("target should rewrite");
         let serialized: Value =
             serde_json::from_slice(&parsed.serialize().expect("should serialize"))
                 .expect("serialized request should parse");
         assert_eq!(serialized["input"][0]["content"][0]["text"], "protected");
         assert_eq!(serialized["input"][1]["call_id"], "safe-id");
+    }
+
+    fn count_strings(value: &Value) -> usize {
+        match value {
+            Value::String(_) => 1,
+            Value::Array(values) => values.iter().map(count_strings).sum(),
+            Value::Object(object) => {
+                object.len() + object.values().map(count_strings).sum::<usize>()
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => 0,
+        }
     }
 
     #[test]

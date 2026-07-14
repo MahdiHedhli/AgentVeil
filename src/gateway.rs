@@ -9,7 +9,7 @@ use async_stream::stream;
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, State};
-use axum::http::header::{CONTENT_ENCODING, CONTENT_TYPE};
+use axum::http::header::{AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -127,6 +127,9 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
     if config.restore_display_text && matches!(config.upstream, UpstreamMode::OpenAi) {
         return Err(GatewayError::LiveRestorationNotVerified);
     }
+    if config.policy.name() == "demo" && matches!(config.upstream, UpstreamMode::OpenAi) {
+        return Err(GatewayError::DemoPolicyRequiresTestUpstream);
+    }
 
     let max_request_bytes = config.policy.defaults().max_request_bytes;
     let session_pseudonym = pseudonym(&config.scope);
@@ -136,6 +139,8 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         engine: Mutex::new(PrivacyEngine::new(config.policy)?),
         client: reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|_| GatewayError::HttpClient)?,
         scope: config.scope,
@@ -184,6 +189,15 @@ async fn models(State(state): State<Arc<GatewayState>>, headers: HeaderMap, uri:
             None,
         );
     }
+    if matches!(state.upstream, UpstreamMode::OpenAi) && !has_single_authorization(&headers) {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "agentveil_upstream_auth_missing",
+            "AgentVeil did not receive one valid Codex authorization header.",
+            None,
+            None,
+        );
+    }
     let query = match validated_models_query(uri.query()) {
         Ok(query) => query,
         Err(()) => {
@@ -209,7 +223,14 @@ async fn models(State(state): State<Arc<GatewayState>>, headers: HeaderMap, uri:
         }
     };
     let forwarded = forward_request_headers(&headers, &state.upstream, false);
-    match state.client.get(target).headers(forwarded).send().await {
+    match state
+        .client
+        .get(target)
+        .headers(forwarded)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+    {
         Ok(upstream) => relay_upstream(upstream, None),
         Err(_) => error_response(
             StatusCode::BAD_GATEWAY,
@@ -235,6 +256,15 @@ async fn responses(
             None,
         );
     }
+    if !state.audit_healthy.load(Ordering::Acquire) {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "agentveil_audit_unavailable",
+            "AgentVeil failed closed because its audit sink is unavailable.",
+            None,
+            Some(0),
+        );
+    }
     if !content_type_is_json(&headers) || has_unsupported_content_encoding(&headers) {
         return error_response(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -244,7 +274,7 @@ async fn responses(
             None,
         );
     }
-    if matches!(state.upstream, UpstreamMode::OpenAi) && !headers.contains_key("authorization") {
+    if matches!(state.upstream, UpstreamMode::OpenAi) && !has_single_authorization(&headers) {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "agentveil_upstream_auth_missing",
@@ -344,6 +374,23 @@ async fn responses(
     let decision = forward.decision;
     let summary = forward.summary.clone();
     let forward_body = forward.into_body();
+    if !write_audit(
+        &state,
+        &event_id,
+        request_sequence,
+        audit_decision(decision),
+        Some(&summary),
+        UpstreamOutcome::Pending,
+        scan_latency_ms,
+    ) {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "agentveil_audit_unavailable",
+            "AgentVeil failed closed because it could not record the protected request.",
+            Some(&event_id),
+            Some(0),
+        );
+    }
     let upstream = state
         .client
         .post(target)
@@ -459,7 +506,7 @@ fn write_audit(
     summary: Option<&ProtectionSummary>,
     upstream_outcome: UpstreamOutcome,
     scan_latency_ms: u64,
-) {
+) -> bool {
     let findings = summary.map_or_else(Vec::new, |summary| {
         summary
             .findings
@@ -493,7 +540,9 @@ fn write_audit(
     if result.is_err() {
         state.audit_healthy.store(false, Ordering::Relaxed);
         tracing::warn!("AgentVeil audit sink is degraded");
+        return false;
     }
+    true
 }
 
 fn audit_decision(decision: ForwardDecision) -> AuditDecision {
@@ -518,6 +567,18 @@ fn authorized(state: &GatewayState, headers: &HeaderMap) -> bool {
             .as_bytes()
             .ct_eq(state.expected_local_token.as_bytes()),
     )
+}
+
+fn has_single_authorization(headers: &HeaderMap) -> bool {
+    let mut values = headers.get_all(AUTHORIZATION).iter();
+    let Some(value) = values.next() else {
+        return false;
+    };
+    values.next().is_none()
+        && value
+            .to_str()
+            .ok()
+            .is_some_and(|value| value.starts_with("Bearer ") && value.len() > "Bearer ".len())
 }
 
 fn content_type_is_json(headers: &HeaderMap) -> bool {
@@ -571,8 +632,11 @@ fn forward_request_headers(
                 | "thread-id"
                 | "user-agent"
                 | "x-client-request-id"
+                | "x-codex-beta-features"
+                | "x-codex-turn-metadata"
+                | "x-codex-window-id"
                 | "x-openai-internal-codex-responses-lite"
-        ) || name_string.starts_with("x-codex-");
+        );
         if allowed && (include_content_type || name_string != "content-type") {
             forwarded.append(name.clone(), value.clone());
         }
@@ -779,6 +843,8 @@ pub enum GatewayError {
     UnsafeTestUpstream,
     #[error("live restoration is not verified and remains disabled")]
     LiveRestorationNotVerified,
+    #[error("the demo policy is restricted to a loopback synthetic upstream")]
+    DemoPolicyRequiresTestUpstream,
     #[error("HTTP client initialization failed")]
     HttpClient,
     #[error("gateway bind failed")]

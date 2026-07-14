@@ -171,6 +171,9 @@ fn validate_rule(data_class: DataClass, rule: &CategoryRule) -> Result<(), Polic
     if rule.restorable && rule.action != Action::Tokenize {
         return Err(PolicyError::RestorationRequiresTokenize(data_class));
     }
+    if rule.action == Action::Tokenize && !rule.restorable {
+        return Err(PolicyError::TokenizationRequiresRestoration(data_class));
+    }
     if rule.action != Action::Tokenize && rule.ttl_seconds.is_some() {
         return Err(PolicyError::TtlRequiresTokenize(data_class));
     }
@@ -239,6 +242,8 @@ pub enum PolicyError {
     HardBlockRestoration(DataClass),
     #[error("restoration for {0} requires tokenization")]
     RestorationRequiresTokenize(DataClass),
+    #[error("tokenization for {0} requires explicit restoration in this version")]
+    TokenizationRequiresRestoration(DataClass),
     #[error("TTL for {0} requires tokenization")]
     TtlRequiresTokenize(DataClass),
     #[error("TTL for {0} is outside the supported bounds")]

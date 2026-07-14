@@ -16,6 +16,7 @@ pub enum AuditDecision {
 #[serde(rename_all = "snake_case")]
 pub enum UpstreamOutcome {
     NotStarted,
+    Pending,
     Started,
     Completed,
     Failed,
