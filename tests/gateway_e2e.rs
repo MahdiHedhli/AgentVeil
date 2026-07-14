@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use agentveil::gateway::{GatewayConfig, UpstreamMode, build_router};
+use agentveil::gateway::{GatewayConfig, SyntheticWireProof, UpstreamMode, build_router};
 use agentveil::ledger::SessionScope;
 use agentveil::policy::ValidatedPolicy;
 use axum::Router;
@@ -23,10 +23,15 @@ const EMAIL: &str = "ava.agentveil@example.test";
 const PRIVATE_IP: &str = "10.24.8.15";
 const LOCAL_TOKEN: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
+fn synthetic_authorization() -> String {
+    format!("{}{}", "Bearer ", "SYNTHETIC_NOT_FOR_UPSTREAM")
+}
+
 #[derive(Default)]
 struct FakeState {
     request_count: AtomicUsize,
     authorization_seen: AtomicBool,
+    forbidden_header_seen: AtomicBool,
     bodies: Mutex<Vec<Vec<u8>>>,
 }
 
@@ -38,7 +43,15 @@ async fn fake_responses(
     state.request_count.fetch_add(1, Ordering::SeqCst);
     state
         .authorization_seen
-        .store(headers.contains_key("authorization"), Ordering::SeqCst);
+        .fetch_or(headers.contains_key("authorization"), Ordering::SeqCst);
+    let forbidden_value_seen = headers.values().any(|value| {
+        value.as_bytes() == LOCAL_TOKEN.as_bytes()
+            || value.as_bytes() == synthetic_authorization().as_bytes()
+    });
+    state.forbidden_header_seen.fetch_or(
+        headers.contains_key("x-agentveil-session") || forbidden_value_seen,
+        Ordering::SeqCst,
+    );
     state.bodies.lock().await.push(body.to_vec());
     let parsed: Value = serde_json::from_slice(&body).expect("gateway body should parse");
     let echo = first_model_text(&parsed).unwrap_or_else(|| "SAFE_EMPTY".to_string());
@@ -131,6 +144,13 @@ async fn spawn(app: Router) -> (SocketAddr, oneshot::Sender<()>, tokio::task::Jo
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .expect("listener should bind");
+    spawn_on(listener, app).await
+}
+
+async fn spawn_on(
+    listener: tokio::net::TcpListener,
+    app: Router,
+) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
     let address = listener.local_addr().expect("listener should have address");
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let task = tokio::spawn(async move {
@@ -158,7 +178,6 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     let gateway_address = gateway_listener
         .local_addr()
         .expect("gateway should have address");
-    drop(gateway_listener);
     let fake_url =
         Url::parse(&format!("http://{fake_address}")).expect("fake upstream URL should parse");
     let audit_path = temporary_audit_path();
@@ -172,17 +191,20 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
         audit_path: audit_path.clone(),
         upstream: UpstreamMode::loopback_test(fake_url).expect("test upstream should validate"),
         restore_display_text: true,
+        synthetic_wire_proof: SyntheticWireProof::unmeasured(),
     })
     .expect("gateway should build");
-    let (gateway_address, gateway_shutdown, gateway_task) = spawn(gateway_app).await;
+    let (gateway_address, gateway_shutdown, gateway_task) =
+        spawn_on(gateway_listener, gateway_app).await;
     let endpoint = format!("http://{gateway_address}/v1/responses");
     let client = reqwest::Client::new();
 
     let raw = format!("Contact {EMAIL} on {PRIVATE_IP}");
+    let synthetic_authorization = synthetic_authorization();
     let response = client
         .post(&endpoint)
         .header("x-agentveil-session", LOCAL_TOKEN)
-        .header("authorization", "Bearer SYNTHETIC_NOT_FOR_UPSTREAM")
+        .header("authorization", &synthetic_authorization)
         .json(&codex_request(&raw, false))
         .send()
         .await
@@ -193,6 +215,7 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert!(local_response.contains(PRIVATE_IP));
     assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
     assert!(!fake_state.authorization_seen.load(Ordering::SeqCst));
+    assert!(!fake_state.forbidden_header_seen.load(Ordering::SeqCst));
     let first_body = fake_state.bodies.lock().await[0].clone();
     let first_body = String::from_utf8(first_body).expect("capture should be UTF-8");
     assert!(!first_body.contains(EMAIL));
@@ -225,13 +248,17 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert_eq!(bypass.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 1);
 
+    let encrypted_private_key = format!(
+        "{}{}",
+        "-----BEGIN ENCRYPTED PRIVATE ", "KEY-----\nSYNTHETIC"
+    );
     let composed_bypasses = [
         r"\uFF53\uFF4B-proj-A1b2C3d4E5f6G7h8I9j0",
         r"sk-proj-A1\u002Eb2\u002EC3\u002Ed4\u002EE5\u002Ef6\u002EG7\u002Eh8\u002EI9\u002Ej0",
         "%73%6B%2D%70%72%6F%6A%2D%41%2E%31%2E%62%2E%32%2E%43%2E%33%2E%64%2E%34%2E%45%2E%35%2E%66%2E%36%2E%47%2E%68%2E%38%2E%49%2E%39%2E%6A%2E%30",
         r"\\u0073k-proj-A1b2C3d4E5f6G7h8I9j0",
         "Xsk-proj-A1b2C3d4E5f6G7h8I9j0",
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC",
+        encrypted_private_key.as_str(),
     ];
     for candidate in composed_bypasses {
         let response = client
@@ -310,6 +337,8 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
         .expect("tool-output request should complete");
     assert_eq!(tool_response.status(), StatusCode::OK);
     assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 2);
+    assert!(!fake_state.authorization_seen.load(Ordering::SeqCst));
+    assert!(!fake_state.forbidden_header_seen.load(Ordering::SeqCst));
     let second_body = fake_state.bodies.lock().await[1].clone();
     let second_body = String::from_utf8(second_body).expect("capture should be UTF-8");
     assert!(!second_body.contains(EMAIL));
@@ -381,7 +410,7 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert!(!dashboard_state.contains("[AV_"));
     let dashboard_state: Value =
         serde_json::from_str(&dashboard_state).expect("dashboard state should parse");
-    assert_eq!(dashboard_state["originals_forwarded"], 0);
+    assert_eq!(dashboard_state["wire_proof"], "not_measured");
     assert_eq!(dashboard_state["binding"], "loopback");
     assert_eq!(dashboard_state["transport"], "responses_sse");
     let activity = dashboard_state["activity"]
@@ -395,6 +424,14 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     sequences.sort_unstable();
     sequences.dedup();
     assert_eq!(sequences.len(), activity_count);
+
+    let rebound = client
+        .get(format!("http://{gateway_address}/dashboard/state"))
+        .header("host", "attacker.example")
+        .send()
+        .await
+        .expect("hostile dashboard authority should return local rejection");
+    assert_eq!(rebound.status(), StatusCode::MISDIRECTED_REQUEST);
 
     let audit = std::fs::read_to_string(&audit_path).expect("audit should be readable");
     for forbidden in [

@@ -129,9 +129,10 @@ That is why the functionality is not enabled live.
   is capped at 1 MiB.
 - Audit writes and flushes are synchronous. Slow storage can delay requests.
 - Audit rotation, retention, export, and deletion are manual.
-- The sink checks the final audit directory/file and applies private modes, but
-  does not provide a full hostile-filesystem proof for every intermediate path
-  component. Choose a trusted local directory.
+- The sink canonicalizes and verifies its private direct parent, never chmods a
+  pre-existing directory, and uses no-follow for the final file. It still does
+  not provide descriptor-relative proof for every intermediate path component;
+  choose a trusted local base directory.
 - The default relative audit path depends on the current working directory. It
   is Git-ignored in this repository, but an alternate/shared directory can leak
   enforcement metadata.
@@ -149,11 +150,13 @@ That is why the functionality is not enabled live.
   AgentVeil’s payload map and live proof are refreshed.
 - There is no automatic update, policy distribution, key management, remote
   telemetry, enterprise admin control, multi-user service, or cloud ledger.
-- The dashboard is read-only, loopback-only, and value-free by construction,
-  but intentionally unauthenticated. A local process can read its typed
-  metadata; never port-forward it. Its zero-originals metric is not independent
-  wire measurement.
-- A packaged demo command was not present at the core evidence anchor.
+- The dashboard is read-only, loopback-only, exact-Host validated, and value-
+  free by construction, but intentionally unauthenticated. A local process can
+  still read its typed metadata; never port-forward it. “Synthetic wire proof”
+  is shown as passed only in the capturing demo and is not a live network
+  sensor.
+- The packaged demo proves an offline synthetic route, not compatibility with a
+  future Codex release or a broader live payload shape.
 
 Open security and evidence work is tracked in
 [RISK_REGISTER.md](RISK_REGISTER.md).

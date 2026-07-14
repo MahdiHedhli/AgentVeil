@@ -4,9 +4,9 @@ Evidence anchor: commit `ed09354`. All fixtures below are intentionally
 synthetic. Never substitute a real credential, personal record, customer name,
 internal hostname, or production address.
 
-The strongest current demo is the deterministic wire proof. The live Codex step
-demonstrates the verified route and a synthetic tool-output next turn, but it is
-not a replacement for the zero-connect test.
+The strongest current demo is the packaged deterministic wire proof. The live
+Codex step demonstrates the verified route and a synthetic tool-output next
+turn, but it is not a replacement for the capturing-upstream zero-connect test.
 
 ## 1. Preflight
 
@@ -22,7 +22,36 @@ cargo build --release --locked
 `doctor` must report Codex `0.144.4`, available authentication, and loopback
 binding. The policy commands print only name/hash/status metadata.
 
-## 2. Run the deterministic wire proof
+## 2. Run the packaged offline demo
+
+For the release-safe, value-free check:
+
+```sh
+./target/release/agentveil demo --check
+```
+
+Exact expected output:
+
+```text
+demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free
+```
+
+To keep its dashboard open:
+
+```sh
+./target/release/agentveil demo
+```
+
+Open the printed loopback URL, then stop the process with Ctrl-C. The command
+creates one ephemeral fake Responses server and one ephemeral AgentVeil
+listener, runs the synthetic proof, and removes its private audit directory on
+exit. It clears no user state, reads no Codex login, uses no DNS or environment
+proxy, and makes no OpenAI request.
+
+The dashboard's “Synthetic wire proof: Passed” state is available only in this
+capturing harness. A normal live session truthfully displays “Not measured.”
+
+## 3. Inspect the focused deterministic wire test
 
 ```sh
 cargo test --locked \
@@ -67,18 +96,18 @@ Do not claim “zero leak” from a screenshot of rewritten JSON. The meaningful
 evidence is that the fake-upstream request count remains unchanged on every
 block/reject path and that its captured accepted bodies exclude originals.
 
-## 3. Run all verification tests
+## 4. Run all verification tests
 
 ```sh
 cargo fmt --check
 cargo clippy --all-targets --all-features --locked -- -D warnings
-cargo test --locked
+cargo test --locked --all-targets
 ```
 
-The current build reports 38 passing tests: 34 library, 3 CLI, and 1 gateway
-integration test.
+The current build reports 42 passing tests: 37 library, 3 CLI, 1 offline-demo
+CLI, and 1 gateway integration test.
 
-## 4. Live synthetic Codex route
+## 5. Live synthetic Codex route
 
 This step contacts OpenAI using existing Codex login state. It demonstrates one
 dated live path only. Keep `--ephemeral` and use the repository fixture exactly
@@ -94,7 +123,10 @@ sed -n '1,20p' fixtures/demo/synthetic-context.txt
 Then launch the protected turn:
 
 ```sh
-AUDIT_PATH="/tmp/agentveil-live-demo.audit.jsonl"
+AUDIT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentveil-live-demo.XXXXXX")"
+chmod 700 "$AUDIT_DIR"
+AUDIT_PATH="$AUDIT_DIR/audit.jsonl"
+trap 'rm -f "$AUDIT_PATH"; rmdir "$AUDIT_DIR"' EXIT
 ./target/release/agentveil codex \
   --reasoning-effort none \
   --audit "$AUDIT_PATH" \
@@ -124,19 +156,26 @@ originals.
 Check the audit without printing its contents:
 
 ```sh
-if rg -q 'ava\.agentveil@example\.test|10\.24\.8\.15|PROJECT-VEIL-DEMO|\[AV_' "$AUDIT_PATH"; then
-  echo 'FAIL: synthetic original or token found in audit'
+test -f "$AUDIT_PATH" && test -r "$AUDIT_PATH" || {
+  echo 'FAIL: audit evidence is missing or unreadable'
   exit 1
-else
-  echo 'PASS: audit contains no synthetic originals or AgentVeil tokens'
-fi
+}
+set +e
+rg -q 'ava\.agentveil@example\.test|10\.24\.8\.15|PROJECT-VEIL-DEMO|\[AV_' "$AUDIT_PATH"
+scan_status=$?
+set -e
+case "$scan_status" in
+  0) echo 'FAIL: synthetic original or token found in audit'; exit 1 ;;
+  1) echo 'PASS: audit contains no synthetic originals or AgentVeil tokens' ;;
+  *) echo 'FAIL: audit scan could not complete'; exit 1 ;;
+esac
 ```
 
 This audit check is useful evidence, but it does not capture the OpenAI wire.
 The fake-upstream test remains the proof of what crossed the controlled egress
 boundary.
 
-## 5. What to show in a short video
+## 6. What to show in a short video
 
 A defensible sub-three-minute sequence is:
 
@@ -144,18 +183,20 @@ A defensible sub-three-minute sequence is:
    into a later model turn.
 2. **Boundary (20 seconds):** show the one-line route and state the exact
    Codex/model/transport scope.
-3. **Deterministic proof (50 seconds):** run the focused gateway test and explain
-   the fake-upstream request-count assertion.
-4. **Live proof (45 seconds):** run the fixture through `agentveil codex`, show
+3. **Deterministic proof (55 seconds):** run `agentveil demo --check`, then open
+   the offline dashboard and explain its capturing-upstream request-count
+   assertion.
+4. **Live proof (40 seconds):** run the fixture through `agentveil codex`, show
    `TOKEN_ENV_EMPTY` and `WRAPPER_ROUTE_OK`, then run the quiet audit scan.
-5. **Visibility and evidence (25 seconds):** show the value-free dashboard, then
-   the payload map, audit schema, 38-test result, and fail-closed boundary.
+5. **Evidence (25 seconds):** show the payload map, audit schema, 42-test result,
+   and fail-closed boundary.
 6. **Honest limits (15 seconds):** live restoration disabled; no IDE/cloud/
    WebSocket/media/universal-DLP claim.
 
-The dashboard is a post-anchor visibility surface. Update the release anchor and
-rerun the proof before presenting the final build; never treat its displayed
-count as a substitute for the capturing-upstream assertion.
+The dashboard changes labels by mode: the offline proof shows its synthetic
+route, while live mode shows the configured Codex/OpenAI route and “Not
+measured.” Never treat displayed status as a substitute for the capturing-
+upstream assertion.
 
 ## Approved claim language
 

@@ -86,9 +86,11 @@ request). The current implementation does not write model-discovery audit rows.
 
 The audit schema has no field for request/response bodies, matched values,
 surrounding context, replacement tokens, mappings, authorization, cookies,
-queries, or filesystem paths. The sink makes its direct directory `0700`, opens
-the file `0600` with no-follow semantics, rejects a permissive existing file,
-and flushes each record. Audit write failure blocks protected egress.
+queries, or filesystem paths. The sink rejects symlink, non-directory, or
+group/other-accessible direct parents without changing their permissions. It
+can create one missing dedicated leaf as `0700`, opens the file `0600` with
+no-follow semantics from the canonical private parent, and flushes and syncs
+each record. Audit write or sync failure blocks protected egress.
 
 Audit metadata can still reveal that a category was detected at a time and in a
 field. Treat the file as private operational data. Retention and deletion are
@@ -138,8 +140,11 @@ metadata, and up to 64 typed value-free audit activities.
 
 The dashboard is deliberately unauthenticated: it has no mutation, and exposing
 the gateway capability to a browser would create a new credential surface. Do
-not port-forward or reverse-proxy the listener. Its zero-originals value is an
-enforcement status, not a network sensor; use the fake upstream for wire proof.
+not port-forward or reverse-proxy the listener. Every dashboard request must
+use the listener's exact Host authority, limiting browser DNS rebinding without
+placing a capability in browser state. `wire_proof` is `synthetic_passed` only
+inside the capturing offline demo; live mode reports `not_measured`. Use the
+fake upstream, not UI state alone, for wire proof.
 
 ## Deletion
 

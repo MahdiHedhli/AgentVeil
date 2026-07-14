@@ -4,7 +4,10 @@ Capture only final-build surfaces with synthetic fixtures. Prefer four strong sc
 
 ## Required set
 
-- [ ] **Hero dashboard:** full desktop view with the AgentVeil name, “Privacy boundary” headline, Codex → AgentVeil → GPT-5.6 route, protected-session state, audit health, and Responses/SSE status.
+- [ ] **Offline proof hero:** full desktop view with the AgentVeil name,
+  “Privacy boundary” headline, Synthetic client → AgentVeil → Loopback fixture
+  route, protected-session state, audit health, Responses status, and
+  “Synthetic wire proof: Passed.”
 - [ ] **Safe activity detail:** selected event showing only data class, action, safe source field, and upstream outcome. Confirm there is no original value, token preview, auth material, mapping, request body, or personal path anywhere in the frame.
 - [ ] **Hard block / zero-connect:** synthetic credential blocked alongside a deterministic fake-upstream request count of `0`. The frame must make clear that this is a synthetic wire-level test.
 - [ ] **Protected tool-result flow:** concise view of the Codex → local tool → AgentVeil → GPT-5.6 Luna workflow and its safe completion marker. Do not expose raw fixtures or environment data.
@@ -13,6 +16,9 @@ Capture only final-build surfaces with synthetic fixtures. Prefer four strong sc
 
 - [ ] **Architecture:** simple three-boundary diagram covering secure launcher, schema-aware gateway, and fixed upstream; include “loopback only” and “live restoration disabled.”
 - [ ] **Verification:** clean final test/release summary with the exact commit SHA. Avoid using a stale hard-coded test count.
+- [ ] **Live route:** if captured, show Codex → AgentVeil → GPT-5.6 separately
+  from the offline proof and retain the truthful “Not measured” wire-proof
+  state.
 - [ ] **Built with Codex:** cropped view from the main development task showing a substantive architecture, security-review, or test-feedback exchange without unrelated private context.
 
 ## Visual quality

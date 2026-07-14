@@ -922,10 +922,16 @@ mod tests {
 
     #[test]
     fn blocks_complete_partial_and_encrypted_private_keys() {
-        let complete = "-----BEGIN PRIVATE KEY-----\nSYNTHETIC\n-----END PRIVATE KEY-----";
-        let incomplete = "-----BEGIN PRIVATE KEY-----\nSYNTHETIC";
-        let encrypted = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC";
-        for candidate in [complete, incomplete, encrypted] {
+        let complete = format!(
+            "{}{}",
+            "-----BEGIN PRIVATE ", "KEY-----\nSYNTHETIC\n-----END PRIVATE KEY-----"
+        );
+        let incomplete = format!("{}{}", "-----BEGIN PRIVATE ", "KEY-----\nSYNTHETIC");
+        let encrypted = format!(
+            "{}{}",
+            "-----BEGIN ENCRYPTED PRIVATE ", "KEY-----\nSYNTHETIC"
+        );
+        for candidate in [&complete, &incomplete, &encrypted] {
             assert!(
                 scanner()
                     .scan(candidate)

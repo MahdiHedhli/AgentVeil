@@ -1,7 +1,9 @@
 # Installation
 
-Evidence anchor: commit `ed09354`. AgentVeil is source-distributed pre-release
-software. There is no signed package at this anchor.
+Evidence anchor: commit `ed09354`; the generated release report supersedes it
+for the current candidate. AgentVeil is pre-release software. Public GitHub
+releases provide checksummed judge binaries, but no artifact is Apple-notarized
+or a signed production package.
 
 ## Requirements
 
@@ -10,6 +12,23 @@ software. There is no signed package at this anchor.
 - a current stable Rust toolchain with Cargo and Rust 2024 edition support;
 - Codex CLI exactly `0.144.4`; and
 - a valid normal Codex login for the live route.
+
+The no-build offline judge proof supports Ubuntu 24.04 x86_64 and macOS 14+
+arm64. The live protected Codex route is evidence-bounded to macOS 26.4.1 arm64
+and Codex CLI exactly `0.144.4`. Other Unix source builds are not a verified
+submission-platform claim.
+
+## Test without rebuilding
+
+Download a prebuilt archive and its SHA-256 file from the
+[latest release](https://github.com/MahdiHedhli/AgentVeil/releases/latest), then
+follow [JUDGE_TEST.md](JUDGE_TEST.md). The resulting one-command proof is:
+
+```sh
+./agentveil demo --check
+```
+
+It needs no Codex installation, login, API key, or OpenAI request.
 
 Do not disable the exact Codex version check to make another release work. A
 client upgrade changes the protocol evidence boundary and requires a refreshed
@@ -55,7 +74,8 @@ Expected Codex version output is either `codex-cli 0.144.4` or
 - verifies the exact version;
 - asks Codex only for login status;
 - verifies loopback binding availability; and
-- prints executable/version/status metadata, never credential contents.
+- prints version/status metadata without the executable path or credential
+  contents.
 
 If Codex is missing, logged out, or a different version, use the official Codex
 installation/login flow and rerun `doctor`. Do not copy authentication files or
@@ -66,11 +86,21 @@ put an access token in AgentVeil configuration.
 ```sh
 cargo fmt --check
 cargo clippy --all-targets --all-features --locked -- -D warnings
-cargo test --locked
+cargo test --locked --all-targets
 ```
 
-The current build passes 38 tests. The gateway integration test is fully local
-and synthetic; it does not contact OpenAI.
+The current build passes 42 tests. The gateway integration test and offline
+demo are fully local and synthetic; neither contacts OpenAI.
+
+Before using live login state, run the packaged proof:
+
+```sh
+./target/release/agentveil demo --check
+./target/release/agentveil demo
+```
+
+The second command prints a loopback dashboard URL and remains active until
+Ctrl-C.
 
 ## Start a protected Codex invocation
 
@@ -105,8 +135,11 @@ personal/customer records.
 ## Audit-path guidance
 
 Choose a local directory controlled by the current user and outside shared,
-cloud-synchronized, or web-served paths. The sink makes its direct parent mode
-`0700` and the file mode `0600`, and rejects a permissive existing file. It does
+cloud-synchronized, or web-served paths. An existing direct parent must already
+be private (`0700` or stricter), non-symlink, and a directory. If only the final
+dedicated leaf is missing, the sink creates it as `0700`; it never changes a
+pre-existing directory's permissions. The audit file is `0600`, opened with
+no-follow semantics, flushed, and synced before protected egress. The sink does
 not rotate or delete the file.
 
 The repository default `runtime/agentveil.audit.jsonl` is Git-ignored. An
@@ -131,7 +164,7 @@ demo policy or restoration with live OpenAI.
 | `currently requires ... 0.144.4` | install the verified Codex release or wait for a refreshed AgentVeil compatibility proof |
 | `authentication is unavailable` | complete normal `codex login`; do not paste tokens into AgentVeil |
 | `routing-bypass mode` | remove model/provider/profile/remote/resume/fork/cloud/server routing arguments |
-| `audit file permissions are too broad` | move to a private file or restrict it to the current user before retrying |
+| `audit file permissions are too broad` | choose a private dedicated parent/file and restrict it yourself before retrying; AgentVeil will not chmod an existing path |
 | `could not safely inspect` | payload shape or detector failed closed; do not bypass the check |
 | `audit sink is unavailable` | restore local disk/path health; protected egress remains blocked |
 | `blocked ... before it reached the remote model` | remove the synthetic credential-shaped value or replace it with a safe non-secret reference |

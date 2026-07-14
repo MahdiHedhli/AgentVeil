@@ -28,7 +28,7 @@ pub struct DashboardSnapshot {
     pub session_pseudonym: String,
     pub policy_name: String,
     pub request_count: u64,
-    pub originals_forwarded: u64,
+    pub wire_proof: &'static str,
     pub activity: Vec<DashboardActivity>,
 }
 
@@ -49,14 +49,18 @@ mod tests {
         assert!(!JS.contains("localStorage"));
         assert!(!JS.contains("sessionStorage"));
         assert!(!JS.contains("AGENTVEIL_SESSION_TOKEN"));
+        assert!(HTML.contains("data-proof-scope=\"synthetic\""));
+        assert!(HTML.contains("data-proof-scope=\"configuration\""));
+        assert!(JS.contains("markStateUnavailable"));
+        assert!(!JS.contains("document.querySelectorAll(\".check\")"));
     }
 
     #[test]
     fn dashboard_copy_states_the_boundary() {
-        assert!(HTML.contains("Local Codex"));
         assert!(HTML.contains("AgentVeil"));
-        assert!(HTML.contains("GPT-5.6"));
-        assert!(HTML.contains("Originals forwarded"));
+        assert!(JS.contains("Local Responses client"));
+        assert!(JS.contains("OpenAI Responses"));
+        assert!(HTML.contains("Synthetic wire proof"));
         assert!(HTML.contains("Live restoration is disabled"));
     }
 }

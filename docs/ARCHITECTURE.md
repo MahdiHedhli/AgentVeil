@@ -76,8 +76,8 @@ Exposed routes in the current build are deliberately small:
 | Route | Purpose | Controls |
 |---|---|---|
 | `GET /health` | value-free local health metadata | loopback binding; no protected values |
-| `GET /dashboard` and local assets | read-only status UI | loopback, embedded assets, CSP/no-store/nosniff and related headers; deliberately no browser credential |
-| `GET /dashboard/state` | value-free activity JSON | loopback, closed schema, maximum 64 deduplicated activities; deliberately no browser credential |
+| `GET /dashboard` and local assets | read-only status UI | loopback, exact listener authority, embedded assets, CSP/no-store/nosniff and related headers; deliberately no browser credential |
+| `GET /dashboard/state` | value-free activity JSON | loopback, exact listener authority, closed schema, maximum 64 deduplicated activities; deliberately no browser credential |
 | `GET /v1/models` | Codex model discovery | local credential, one Bearer header for live mode, fixed endpoint, one allowlisted query |
 | `POST /v1/responses` | protected model turn | local credential, live auth check, strict JSON/body rules, privacy engine, audit-before-egress |
 
@@ -91,8 +91,11 @@ upstream and strips authorization.
 Dashboard routes are intentionally unauthenticated because they contain no
 protected values or mutation, while putting the session capability in a URL,
 DOM, cookie, or browser storage would create a secret-exposure risk. State is
-derived only from value-free audit events. `originals_forwarded: 0` reports the
-enforcement invariant; the capturing fake upstream remains the wire proof.
+derived only from value-free audit events. Every dashboard request must present
+the listener's exact Host authority, which closes the browser DNS-rebinding path
+without introducing a browser credential. `wire_proof: synthetic_passed` is
+emitted only by the capturing loopback demo; live mode reports `not_measured`.
+The capturing fake upstream, not a UI counter, remains the wire proof.
 
 ### Payload adapter
 
@@ -166,10 +169,14 @@ They do not contain request/response bodies, matched context, original values,
 replacement tokens, mappings, authorization, cookies, query strings, or
 sensitive paths.
 
-The sink creates its direct parent with mode `0700` and the append-only file
-with mode `0600`, rejects symlink/permissive final paths, and flushes each
-record. A `pending` record must persist before upstream send. A write failure
-marks audit unhealthy and prevents later protected egress.
+The sink never changes permissions on a pre-existing directory. It rejects a
+symlink, non-directory, or group/other-accessible direct parent; when that
+single dedicated leaf is absent, it creates it with mode `0700` beneath a
+canonical existing base. It opens the append-only file from the canonical
+private parent with mode `0600` and no-follow semantics, then flushes and
+syncs each record. A `pending` record must persist before upstream send. A
+write or sync failure marks audit unhealthy and prevents later protected
+egress.
 
 ### SSE response path
 

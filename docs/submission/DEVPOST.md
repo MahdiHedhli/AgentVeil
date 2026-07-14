@@ -1,6 +1,7 @@
 # AgentVeil — Devpost draft
 
-> Draft basis: repository state at `ed09354`. Revalidate every claim against the final release commit before submission.
+> Draft basis: current release candidate. Revalidate every claim against the
+> final clean release report before submission.
 
 ## Submission fields
 
@@ -9,7 +10,14 @@
 - **Planned track:** Developer Tools
 - **Repository:** [github.com/MahdiHedhli/AgentVeil](https://github.com/MahdiHedhli/AgentVeil) — verify it is public at submission time
 - **Public YouTube demo:** `<ADD PUBLIC YOUTUBE URL>`
-- **Live demo:** `<ADD URL OR STATE THAT THE DEMO RUNS LOCALLY>`
+- **Demo:** Runs locally with `agentveil demo`; no hosted service or credential
+  is required for the offline synthetic proof
+- **Judge test:** [prebuilt release instructions](../JUDGE_TEST.md)
+- **Codex `/feedback` Session ID:** `<ADD SESSION ID FROM THIS MAIN TASK>`
+
+AgentVeil is new Build Week work. Its first repository commit is dated July 14,
+2026, after the July 13 submission-period opening; the final entry should retain
+that public commit history and the main Codex Session ID.
 
 ## Short description
 
@@ -27,7 +35,7 @@ AgentVeil launches the verified Codex CLI through an authenticated loopback cust
 - Approved lower-risk values, such as synthetic email or private-IP fixtures, can be replaced with opaque tokens scoped to one short-lived session.
 - Tool and function outputs are inspected on the next model turn, not treated as trusted data.
 - Audit records contain classifications, decisions, and safe source-field metadata—not request bodies, protected values, auth material, or token mappings.
-- A loopback-only status surface exposes safe operational metadata without exposing a local authorization capability.
+- A loopback-only status surface exposes safe operational metadata without exposing a local authorization capability, and exact-Host validation limits browser DNS rebinding.
 
 Unsupported or opaque model-visible shapes fail closed. AgentVeil does not install a local certificate authority, perform generic TLS interception, or require a Codex fork.
 
@@ -40,7 +48,13 @@ AgentVeil is a Rust application built around four boundaries:
 3. A schema-aware privacy engine classifies every JSON string value and object key, composes bounded normalization transforms, blocks S0 material, and tokenizes only explicitly restorable lower-risk classes.
 4. A value-free audit sink is written successfully before remote forwarding; audit failure closes the route.
 
-The deterministic test harness uses only synthetic fixtures and a fake loopback upstream. Its wire-level checks include a hard-block case where the upstream request counter remains zero, outbound tokenization, fragmented Responses SSE handling, tool-output inspection, and audit-content assertions. At `ed09354`, the Rust suite comprised 36 passing tests and passed strict Clippy; these counts must be refreshed for the final commit.
+The packaged deterministic harness uses only synthetic fixtures and a capturing
+loopback upstream. Its wire-level checks include a hard-block case where the
+upstream request counter remains unchanged, outbound tokenization, tool-output
+inspection, value-free dashboard state, and audit-content assertions. The
+current Rust suite comprises 42 passing tests—37 library, 3 launcher, 1
+offline-demo CLI, and 1 gateway integration test—and passes strict Clippy. The
+final submission must bind these counts to the clean release report.
 
 ## How Codex was used meaningfully
 
@@ -76,6 +90,10 @@ Privacy controls need wire evidence, not UI assurances. “Detected” is weaker
 AgentVeil is a hackathon prototype, not a production DLP product or a defense against a malicious local machine. The verified scope is local Codex CLI `0.144.4`, HTTP OpenAI Responses/SSE, supported text-bearing JSON shapes, and synthetic sensitive-data fixtures. Live OpenAI restoration is disabled. Codex IDE, cloud tasks, Responses WebSockets, browser ChatGPT, other AI clients, image/OCR input, binary bodies, and perfect detection are not claimed.
 
 No demo, screenshot, log, issue, or submission text may contain real credentials or personal data.
+
+Prebuilt judge artifacts support Ubuntu 24.04 x86_64 and macOS 14+ arm64 for
+the offline proof. The dated live Codex evidence is narrower: macOS 26.4.1
+arm64, Codex CLI `0.144.4`, HTTP Responses/SSE, and GPT-5.6 Luna.
 
 ## Built with
 

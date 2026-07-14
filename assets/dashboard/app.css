@@ -463,7 +463,8 @@ h2 {
 
 .activity-action.block,
 .activity-action.mask,
-.activity-action.tokenize {
+.activity-action.tokenize,
+.activity-action.rejected {
   border-color: #bce5c8;
   background: var(--green-pale);
   color: var(--green-dark);
@@ -493,11 +494,23 @@ h2 {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid #a7dcb6;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+}
+
+.check.verified {
+  border-color: #a7dcb6;
   background: var(--green-pale);
   color: var(--green-dark);
-  font-size: 0.7rem;
+}
+
+.proof-status {
+  color: var(--green-dark);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
 }
 
 .check-list strong,

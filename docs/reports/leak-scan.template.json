@@ -1,9 +1,21 @@
 {
   "$schema": "../../docs/reports/leak-scan.schema.json",
+  "clean_worktree": false,
+  "coverage": {
+    "generated_evidence": false,
+    "git_history": false,
+    "max_bytes_per_object": 16777216,
+    "tracked_worktree": false
+  },
   "evidence_files_scanned": 0,
   "finding_counts": [],
+  "generated_at_utc": "1970-01-01T00:00:00Z",
+  "head_commit": "0000000000000000000000000000000000000000",
+  "history_blobs_scanned": 0,
+  "release_eligible": false,
   "scan_error_counts": [],
-  "schema_version": 1,
-  "status": "pass",
+  "scanner_id": "agentveil-verify-no-leak-v2",
+  "schema_version": 2,
+  "status": "template",
   "tracked_files_scanned": 0
 }

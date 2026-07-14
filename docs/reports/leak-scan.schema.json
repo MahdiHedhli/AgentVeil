@@ -1,14 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentveil.dev/schemas/leak-scan.schema.json",
+  "$id": "https://agentveil.dev/schemas/leak-scan-v2.schema.json",
   "title": "AgentVeil value-free leak scan report",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "$schema",
     "schema_version",
+    "scanner_id",
+    "generated_at_utc",
+    "head_commit",
+    "clean_worktree",
     "status",
+    "release_eligible",
+    "coverage",
     "tracked_files_scanned",
+    "history_blobs_scanned",
     "evidence_files_scanned",
     "finding_counts",
     "scan_error_counts"
@@ -20,13 +27,60 @@
     },
     "schema_version": {
       "type": "integer",
-      "const": 1
+      "const": 2
+    },
+    "scanner_id": {
+      "type": "string",
+      "const": "agentveil-verify-no-leak-v2"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "head_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "clean_worktree": {
+      "type": "boolean"
     },
     "status": {
       "type": "string",
-      "enum": ["pass", "fail"]
+      "enum": ["pass", "fail", "template"]
+    },
+    "release_eligible": {
+      "type": "boolean"
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tracked_worktree",
+        "git_history",
+        "generated_evidence",
+        "max_bytes_per_object"
+      ],
+      "properties": {
+        "tracked_worktree": {
+          "type": "boolean"
+        },
+        "git_history": {
+          "type": "boolean"
+        },
+        "generated_evidence": {
+          "type": "boolean"
+        },
+        "max_bytes_per_object": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     },
     "tracked_files_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "history_blobs_scanned": {
       "type": "integer",
       "minimum": 0
     },
@@ -47,6 +101,50 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_eligible": {
+            "const": true
+          }
+        },
+        "required": ["release_eligible"]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "pass"
+          },
+          "clean_worktree": {
+            "const": true
+          },
+          "coverage": {
+            "properties": {
+              "tracked_worktree": {
+                "const": true
+              },
+              "git_history": {
+                "const": true
+              },
+              "generated_evidence": {
+                "const": true
+              }
+            }
+          },
+          "tracked_files_scanned": {
+            "minimum": 1
+          },
+          "history_blobs_scanned": {
+            "minimum": 1
+          },
+          "evidence_files_scanned": {
+            "minimum": 1
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "finding_count": {
       "type": "object",

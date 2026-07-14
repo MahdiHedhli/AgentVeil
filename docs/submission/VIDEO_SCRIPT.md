@@ -1,6 +1,6 @@
 # AgentVeil demo video script
 
-Target runtime: **2:50**. Hard limit: **under 3:00**. Record voiceover and publish the final video publicly on YouTube.
+Target runtime: **2:42–2:45**. Hard limit: **under 3:00**. Record English voiceover and publish the final video publicly on YouTube.
 
 Use synthetic fixtures only. Record in a clean local account with notifications disabled. Never show an auth header, environment dump, shell history containing secrets, token mapping, request/response body, or personal filesystem path.
 
@@ -14,7 +14,9 @@ Use synthetic fixtures only. Record in a clean local account with notifications 
 
 ### 0:12–0:28 — Product reveal
 
-**Screen:** AgentVeil dashboard hero. Show the local route: Codex → AgentVeil → GPT-5.6.
+**Screen:** Start `agentveil demo`, then open its dashboard hero. Show the honest
+offline route: Synthetic client → AgentVeil → Loopback fixture, with “Synthetic
+wire proof: Passed.”
 
 **Voiceover:** “AgentVeil is a local privacy harness for Codex. It inspects supported Responses traffic before remote egress, blocks high-risk material, and replaces approved lower-risk values with short-lived session tokens.”
 
@@ -26,13 +28,17 @@ Use synthetic fixtures only. Record in a clean local account with notifications 
 
 ### 0:49–1:15 — Tokenization demo
 
-**Screen:** Run the deterministic synthetic demo. Show a synthetic email and private IP entering locally, then show only opaque placeholders at the fake upstream inspector. Do not reveal a reusable mapping.
+**Screen:** Run `agentveil demo --check`; hold on its single value-free pass
+line. In the dashboard, highlight the email mask and private-IP tokenization
+activity rows. Do not display the fixture, request body, or a reusable mapping.
 
 **Voiceover:** “Here, synthetic lower-risk values are classified and replaced locally. The fake upstream sees placeholders rather than the originals. Tokens are random, session-scoped, time-bounded, and never written to the audit log.”
 
 ### 1:15–1:38 — Hard-block and zero-connect proof
 
-**Screen:** Submit a clearly labeled synthetic credential fixture. Show the blocked result and the fake-upstream request counter remaining at zero.
+**Screen:** Highlight `zero_connect=pass` in the demo result and the credential
+activity row showing Blocked / Not started. Add a small caption: “Capturing
+upstream count unchanged for block.”
 
 **Voiceover:** “Credentials and private keys are different: they are never tokenized or restorable. This synthetic credential is blocked before an upstream request begins, and the wire harness proves that with a zero request count.”
 
@@ -44,17 +50,19 @@ Use synthetic fixtures only. Record in a clean local account with notifications 
 
 ### 2:02–2:23 — Safe observability
 
-**Screen:** Dashboard activity and verification panels. Highlight class, action, source field, audit health, and zero original-value display.
+**Screen:** Dashboard activity and verification panels. Highlight class,
+action, safe source field, audit health, and synthetic wire-proof status. Do not
+show a “zero originals” UI metric; that is not an independent network sensor.
 
 **Voiceover:** “The dashboard and audit expose decisions, not data. They show what class was handled, where it appeared, and whether the request started—without bodies, authorization, protected values, mappings, or token previews.”
 
-### 2:23–2:42 — Built with Codex
+### 2:23–2:38 — Built with Codex
 
 **Screen:** Fast montage of the main Codex task: integration decision, adversarial test names, and a clean test summary. Avoid showing unrelated tasks or private context.
 
 **Voiceover:** “We built AgentVeil in Codex itself. Codex helped inspect its real provider seam, implement the Rust gateway, coordinate adversarial reviews, and turn bypass findings—object keys, encoded text, overlaps, and tool results—into regression tests.”
 
-### 2:42–2:50 — Honest close
+### 2:38–2:45 — Honest close
 
 **Screen:** Repository URL and final hero. Small label: “Local Codex CLI prototype · synthetic fixtures · live restoration disabled.”
 
@@ -66,6 +74,10 @@ Use synthetic fixtures only. Record in a clean local account with notifications 
 - Product behavior, meaningful Codex use, and meaningful GPT-5.6 use are all visible—not only asserted in slides.
 - The credential block shot visibly pairs the block with the fake-upstream zero count.
 - The tokenization shot never implies that live OpenAI restoration is enabled.
+- The offline dashboard shows the synthetic loopback route. Show the separate
+  Codex → AgentVeil → GPT-5.6 route only with the dated live validation.
 - Every sensitive-looking value is a documented synthetic fixture.
 - Repository and any shown report match the final release commit.
 - Upload is public on YouTube, plays while signed out, and has usable audio at normal volume.
+- Music, imagery, fonts, product marks, and every other media asset are original, licensed, or used with authorization.
+- Spoken audio, captions, and on-screen submission instructions are in English.

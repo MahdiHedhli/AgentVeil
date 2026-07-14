@@ -10,7 +10,7 @@ use async_stream::stream;
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, State};
-use axum::http::header::{AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE};
+use axum::http::header::{AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, HOST};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -48,37 +48,84 @@ pub struct GatewayConfig {
     pub audit_path: PathBuf,
     pub upstream: UpstreamMode,
     pub restore_display_text: bool,
+    pub synthetic_wire_proof: SyntheticWireProof,
 }
 
 #[derive(Clone)]
-pub enum UpstreamMode {
+pub struct UpstreamMode(UpstreamKind);
+
+#[derive(Clone)]
+enum UpstreamKind {
     OpenAi,
     LoopbackTest(Url),
 }
 
 impl UpstreamMode {
+    pub fn openai() -> Self {
+        Self(UpstreamKind::OpenAi)
+    }
+
     pub fn loopback_test(url: Url) -> Result<Self, GatewayError> {
-        if url.scheme() != "http"
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(GatewayError::UnsafeTestUpstream);
+        validate_loopback_test_url(&url)?;
+        Ok(Self(UpstreamKind::LoopbackTest(url)))
+    }
+
+    fn validate(&self) -> Result<(), GatewayError> {
+        match &self.0 {
+            UpstreamKind::OpenAi => Ok(()),
+            UpstreamKind::LoopbackTest(url) => validate_loopback_test_url(url),
         }
-        let host = url.host_str().ok_or(GatewayError::UnsafeTestUpstream)?;
-        let address: IpAddr = host.parse().map_err(|_| GatewayError::UnsafeTestUpstream)?;
-        if !address.is_loopback() {
-            return Err(GatewayError::UnsafeTestUpstream);
-        }
-        Ok(Self::LoopbackTest(url))
+    }
+
+    fn is_openai(&self) -> bool {
+        matches!(self.0, UpstreamKind::OpenAi)
+    }
+
+    fn is_loopback_test(&self) -> bool {
+        matches!(self.0, UpstreamKind::LoopbackTest(_))
     }
 
     fn label(&self) -> &'static str {
-        match self {
-            Self::OpenAi => "openai",
-            Self::LoopbackTest(_) => "loopback_test",
+        match self.0 {
+            UpstreamKind::OpenAi => "openai",
+            UpstreamKind::LoopbackTest(_) => "loopback_test",
         }
+    }
+}
+
+fn validate_loopback_test_url(url: &Url) -> Result<(), GatewayError> {
+    if url.scheme() != "http"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(GatewayError::UnsafeTestUpstream);
+    }
+    let host = url.host_str().ok_or(GatewayError::UnsafeTestUpstream)?;
+    let address: IpAddr = host.parse().map_err(|_| GatewayError::UnsafeTestUpstream)?;
+    if !address.is_loopback() {
+        return Err(GatewayError::UnsafeTestUpstream);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Default)]
+pub struct SyntheticWireProof {
+    passed: Arc<AtomicBool>,
+}
+
+impl SyntheticWireProof {
+    pub fn unmeasured() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn mark_passed(&self) {
+        self.passed.store(true, Ordering::Release);
+    }
+
+    fn passed(&self) -> bool {
+        self.passed.load(Ordering::Acquire)
     }
 }
 
@@ -97,14 +144,17 @@ struct GatewayState {
     started: Instant,
     request_sequence: AtomicU64,
     dashboard_activity: StdMutex<VecDeque<DashboardActivity>>,
+    expected_dashboard_authority: String,
+    synthetic_wire_proof: SyntheticWireProof,
 }
 
-pub async fn serve(config: GatewayConfig) -> Result<(), GatewayError> {
-    let bind = config.bind;
-    let app = build_router(config)?;
-    let listener = tokio::net::TcpListener::bind(bind)
+pub async fn serve(mut config: GatewayConfig) -> Result<(), GatewayError> {
+    let listener = tokio::net::TcpListener::bind(config.bind)
         .await
         .map_err(|_| GatewayError::Bind)?;
+    let bind = listener.local_addr().map_err(|_| GatewayError::Bind)?;
+    config.bind = bind;
+    let app = build_router(config)?;
     tracing::info!(
         address = %bind,
         transport = "responses_sse",
@@ -128,10 +178,11 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
     {
         return Err(GatewayError::InvalidLocalSessionToken);
     }
-    if config.restore_display_text && matches!(config.upstream, UpstreamMode::OpenAi) {
+    config.upstream.validate()?;
+    if config.restore_display_text && config.upstream.is_openai() {
         return Err(GatewayError::LiveRestorationNotVerified);
     }
-    if config.policy.name() == "demo" && matches!(config.upstream, UpstreamMode::OpenAi) {
+    if config.policy.name() == "demo" && config.upstream.is_openai() {
         return Err(GatewayError::DemoPolicyRequiresTestUpstream);
     }
 
@@ -139,6 +190,7 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
     let session_pseudonym = pseudonym(&config.scope);
     let policy_name = config.policy.name().to_string();
     let policy_hash = config.policy.hash().to_string();
+    let expected_dashboard_authority = config.bind.to_string();
     let state = Arc::new(GatewayState {
         engine: Mutex::new(PrivacyEngine::new(config.policy)?),
         client: reqwest::Client::builder()
@@ -159,6 +211,8 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         started: Instant::now(),
         request_sequence: AtomicU64::new(0),
         dashboard_activity: StdMutex::new(VecDeque::with_capacity(DASHBOARD_ACTIVITY_LIMIT)),
+        expected_dashboard_authority,
+        synthetic_wire_proof: config.synthetic_wire_proof,
     });
     Ok(Router::new()
         .route("/health", get(health))
@@ -173,19 +227,31 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         .with_state(state))
 }
 
-async fn dashboard_page() -> Response {
+async fn dashboard_page(State(state): State<Arc<GatewayState>>, headers: HeaderMap) -> Response {
+    if !dashboard_authority_allowed(&state, &headers) {
+        return dashboard_authority_rejected();
+    }
     dashboard_asset(dashboard::HTML, "text/html; charset=utf-8")
 }
 
-async fn dashboard_css() -> Response {
+async fn dashboard_css(State(state): State<Arc<GatewayState>>, headers: HeaderMap) -> Response {
+    if !dashboard_authority_allowed(&state, &headers) {
+        return dashboard_authority_rejected();
+    }
     dashboard_asset(dashboard::CSS, "text/css; charset=utf-8")
 }
 
-async fn dashboard_js() -> Response {
+async fn dashboard_js(State(state): State<Arc<GatewayState>>, headers: HeaderMap) -> Response {
+    if !dashboard_authority_allowed(&state, &headers) {
+        return dashboard_authority_rejected();
+    }
     dashboard_asset(dashboard::JS, "text/javascript; charset=utf-8")
 }
 
-async fn dashboard_state(State(state): State<Arc<GatewayState>>) -> Response {
+async fn dashboard_state(State(state): State<Arc<GatewayState>>, headers: HeaderMap) -> Response {
+    if !dashboard_authority_allowed(&state, &headers) {
+        return dashboard_authority_rejected();
+    }
     let activity = state
         .dashboard_activity
         .lock()
@@ -206,10 +272,32 @@ async fn dashboard_state(State(state): State<Arc<GatewayState>>) -> Response {
         session_pseudonym: state.session_pseudonym.clone(),
         policy_name: state.policy_name.clone(),
         request_count: state.request_sequence.load(Ordering::Relaxed),
-        originals_forwarded: 0,
+        wire_proof: if state.synthetic_wire_proof.passed() {
+            "synthetic_passed"
+        } else {
+            "not_measured"
+        },
         activity,
     };
     let mut response = axum::Json(snapshot).into_response();
+    apply_dashboard_headers(response.headers_mut());
+    response
+}
+
+fn dashboard_authority_allowed(state: &GatewayState, headers: &HeaderMap) -> bool {
+    let mut values = headers.get_all(HOST).iter();
+    let Some(value) = values.next() else {
+        return false;
+    };
+    values.next().is_none()
+        && value
+            .to_str()
+            .is_ok_and(|value| value == state.expected_dashboard_authority)
+}
+
+fn dashboard_authority_rejected() -> Response {
+    let mut response = Response::new(Body::from("AgentVeil rejected the dashboard authority."));
+    *response.status_mut() = StatusCode::MISDIRECTED_REQUEST;
     apply_dashboard_headers(response.headers_mut());
     response
 }
@@ -273,7 +361,7 @@ async fn models(State(state): State<Arc<GatewayState>>, headers: HeaderMap, uri:
             None,
         );
     }
-    if matches!(state.upstream, UpstreamMode::OpenAi) && !has_single_authorization(&headers) {
+    if state.upstream.is_openai() && !has_single_authorization(&headers) {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "agentveil_upstream_auth_missing",
@@ -358,7 +446,7 @@ async fn responses(
             None,
         );
     }
-    if matches!(state.upstream, UpstreamMode::OpenAi) && !has_single_authorization(&headers) {
+    if state.upstream.is_openai() && !has_single_authorization(&headers) {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "agentveil_upstream_auth_missing",
@@ -717,7 +805,7 @@ fn forward_request_headers(
     upstream: &UpstreamMode,
     include_content_type: bool,
 ) -> HeaderMap {
-    if matches!(upstream, UpstreamMode::LoopbackTest(_)) {
+    if upstream.is_loopback_test() {
         let mut headers = HeaderMap::new();
         if include_content_type {
             headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -785,14 +873,14 @@ fn upstream_url(
     route: Route,
     query: Option<&str>,
 ) -> Result<Url, GatewayError> {
-    let mut url = match upstream {
-        UpstreamMode::LoopbackTest(base) => base
+    let mut url = match &upstream.0 {
+        UpstreamKind::LoopbackTest(base) => base
             .join(match route {
                 Route::Responses => "/v1/responses",
                 Route::Models => "/v1/models",
             })
             .map_err(|_| GatewayError::UpstreamUrl)?,
-        UpstreamMode::OpenAi => {
+        UpstreamKind::OpenAi => {
             let chatgpt = headers.contains_key("chatgpt-account-id");
             Url::parse(match (route, chatgpt) {
                 (Route::Responses, true) => CHATGPT_RESPONSES_URL,

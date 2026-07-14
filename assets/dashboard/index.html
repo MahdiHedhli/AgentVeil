@@ -21,7 +21,7 @@
       </a>
       <div class="session-status" role="status">
         <span class="status-dot" aria-hidden="true"></span>
-        <span>Protected session</span>
+        <span id="session-state-label">Checking session</span>
         <span class="status-divider" aria-hidden="true"></span>
         <span>Local only</span>
       </div>
@@ -70,15 +70,15 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">Verified route</p>
-              <h2 id="route-title">Local Codex to GPT-5.6</h2>
+              <h2 id="route-title">Protected Responses route</h2>
             </div>
-            <span class="live-pill"><span aria-hidden="true"></span>Active</span>
+            <span id="route-state" class="live-pill"><span aria-hidden="true"></span>Checking</span>
           </div>
-          <div class="route-flow" aria-label="Local Codex routes through AgentVeil to GPT-5.6">
+          <div id="route-flow" class="route-flow" aria-label="Protected Responses route through AgentVeil">
             <div class="route-node">
               <span class="node-index">01</span>
-              <strong>Local Codex</strong>
-              <small>Responses client</small>
+              <strong id="route-origin">Local client</strong>
+              <small id="route-origin-detail">Responses transport</small>
             </div>
             <div class="route-line" aria-hidden="true"><span></span></div>
             <div class="route-node veil-node">
@@ -89,17 +89,17 @@
             <div class="route-line" aria-hidden="true"><span></span></div>
             <div class="route-node">
               <span class="node-index">03</span>
-              <strong>GPT-5.6</strong>
-              <small>Protected context</small>
+              <strong id="route-destination">Configured upstream</strong>
+              <small id="route-destination-detail">Protected context</small>
             </div>
           </div>
         </section>
 
         <section class="metrics" aria-label="Privacy boundary metrics">
           <article class="metric-card critical">
-            <p>Originals forwarded</p>
-            <strong id="original-count">0</strong>
-            <span>Protected findings stay local</span>
+            <p>Synthetic wire proof</p>
+            <strong id="wire-proof-state">Not measured</strong>
+            <span id="wire-proof-detail">Run the closed-loop demo for evidence</span>
           </article>
           <article class="metric-card">
             <p>Audit sink</p>
@@ -135,21 +135,21 @@
             <p class="eyebrow">Boundary proof</p>
             <h2 id="verification-title">Verification</h2>
             <ul class="check-list">
-              <li>
-                <span class="check" aria-hidden="true">✓</span>
-                <div><strong>Zero-connect block</strong><small>Hard secrets stop before egress.</small></div>
+              <li data-proof-scope="synthetic">
+                <span class="check" aria-hidden="true">•</span>
+                <div><strong>Zero-connect block</strong><small>Hard secrets stop before egress. <span class="proof-status">Configured</span></small></div>
               </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span>
-                <div><strong>Tool-result boundary</strong><small>Tool outputs are scanned on re-entry.</small></div>
+              <li data-proof-scope="synthetic">
+                <span class="check" aria-hidden="true">•</span>
+                <div><strong>Tool-result boundary</strong><small>Tool outputs are scanned on re-entry. <span class="proof-status">Configured</span></small></div>
               </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span>
-                <div><strong>Audit minimization</strong><small>Events contain classifications, never values.</small></div>
+              <li data-proof-scope="synthetic">
+                <span class="check" aria-hidden="true">•</span>
+                <div><strong>Audit minimization</strong><small>Events contain classifications, never values. <span class="proof-status">Configured</span></small></div>
               </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span>
-                <div><strong>Fixed upstream</strong><small>Redirects and ambient proxies are disabled.</small></div>
+              <li data-proof-scope="configuration">
+                <span class="check" aria-hidden="true">•</span>
+                <div><strong>Fixed upstream</strong><small>Redirects and ambient proxies are disabled. <span class="proof-status">Configured</span></small></div>
               </li>
             </ul>
 

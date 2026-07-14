@@ -15,9 +15,10 @@ credential classes, and masks or tokenizes configured lower-risk values.
 
 ## Evidence snapshot
 
-The core claims below are anchored to commit `ed09354` (July 14, 2026). The
-current build additionally includes the local value-free dashboard; the final
-release commit must replace this anchor after rerunning every gate.
+The core route claims were first anchored to commit `ed09354` (July 14, 2026).
+The current release candidate adds the deterministic offline demo, value-free
+dashboard, hardened audit sink, benchmark harness, and release evidence gates.
+The generated release report records the exact commit and clean-tree state.
 
 - The secure launcher routes Codex CLI `0.144.4` and `gpt-5.6-luna` through an
   ephemeral loopback provider without changing persistent Codex configuration.
@@ -40,10 +41,12 @@ release commit must replace this anchor after rerunning every gate.
   the raw synthetic email, private IP, project label, and AgentVeil tokens were
   absent from its audit file.
 - The read-only dashboard serves only typed enforcement metadata from loopback,
-  uses local assets and restrictive browser headers, and exposes no browser
-  credential. It is visibility, not independent wire proof.
-- `cargo test --locked` passes 38 tests: 34 library tests, 3 launcher tests, and
-  1 gateway wire-level integration test.
+  requires the exact loopback authority on every dashboard request, uses local
+  assets and restrictive browser headers, and exposes no browser credential.
+  Its synthetic proof state is set only by the capturing demo harness.
+- `cargo test --locked --all-targets` passes 42 tests: 37 library tests, 3
+  launcher tests, 1 offline-demo CLI test, and 1 gateway wire-level integration
+  test.
 
 Live OpenAI response restoration is deliberately disabled. Exact-token
 restoration exists only for the loopback synthetic-test mode while local Codex
@@ -66,7 +69,9 @@ Codex CLI 0.144.4
 
 The same loopback listener serves `/dashboard`. Its read-only routes are
 deliberately unauthenticated so no gateway credential enters browser state; the
-JSON contains only typed, value-free status and activity metadata.
+JSON contains only typed, value-free status and activity metadata. Exact Host
+validation prevents a browser from reaching those routes through another
+authority.
 
 The launcher pins the verified Codex executable, model, wire format, and
 provider configuration. It rejects passthrough options that could change model
@@ -76,7 +81,16 @@ removes the local gateway credential from shell environments created by Codex.
 ## Safe quick start
 
 Prerequisites and exact installation steps are in [docs/INSTALL.md](docs/INSTALL.md).
-After building:
+After building, run the offline proof before contacting OpenAI:
+
+```sh
+agentveil demo --check
+agentveil demo
+```
+
+The second command prints a loopback dashboard URL and remains active until
+Ctrl-C. It uses only embedded synthetic fixtures and a capturing loopback fake
+upstream. For the separately scoped live route:
 
 ```sh
 agentveil doctor
@@ -86,13 +100,44 @@ agentveil codex --reasoning-effort none -- \
   'Reply with ROUTE_OK. This prompt contains synthetic data only.'
 ```
 
-`agentveil doctor` reads executable/version and login-status metadata; it does
-not read credential contents. The `codex` command uses normal Codex login state
-in-process and does not persist a bearer token.
+`agentveil doctor` verifies an external executable, version, and login-status
+metadata without printing its path or reading credential contents. The `codex`
+command uses normal Codex login state in-process and does not persist a bearer
+token.
 
 Never test this pre-release build with a real credential or personal record. A
 deterministic fake-upstream demonstration is documented in
 [docs/DEMO.md](docs/DEMO.md).
+
+## Judge-ready release
+
+The [latest GitHub release](https://github.com/MahdiHedhli/AgentVeil/releases/latest)
+publishes prebuilt, SHA-256-checksummed archives for Ubuntu 24.04 x86_64 and
+macOS 14+ arm64. The offline proof requires no source build, Codex login, API
+key, or OpenAI request. Follow [the judge test path](docs/JUDGE_TEST.md) and run:
+
+```sh
+./agentveil demo --check
+```
+
+The separately scoped live Codex route was verified on macOS 26.4.1 arm64 with
+Codex CLI exactly `0.144.4`. Release archives are pre-release judge artifacts,
+not signed/notarized production packages.
+
+## Built with Codex and GPT-5.6
+
+Codex accelerated repository analysis, payload-seam tracing, Rust
+implementation, parallel adversarial review, browser QA, and repetitive release
+verification. The human decisions remained explicit: choose a narrow custom-
+provider seam instead of TLS interception, fail closed on unknown model-visible
+shapes, block rather than tokenize S0 material, keep live restoration disabled,
+and require wire evidence before a privacy claim.
+
+GPT-5.6 Luna is the model on the dated live protected workflow, not a label on a
+separate demo call. In that synthetic validation, Codex read a local tool
+fixture, AgentVeil protected the resulting tool output on the next Responses
+turn, and GPT-5.6 completed the guarded turn. The offline judge path uses a fake
+upstream so anyone can verify the security boundary without credentials.
 
 ## Policy classes
 
@@ -123,6 +168,7 @@ in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 - [Privacy and retention](docs/PRIVACY.md)
 - [Supported payload map](docs/PAYLOAD_MAP.md)
 - [Installation](docs/INSTALL.md)
+- [Judge test path](docs/JUDGE_TEST.md)
 - [Deterministic and live demo](docs/DEMO.md)
 - [Known limitations](docs/LIMITATIONS.md)
 - [Risk register](docs/RISK_REGISTER.md)
@@ -133,7 +179,8 @@ in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 ```sh
 cargo fmt --check
 cargo clippy --all-targets --all-features --locked -- -D warnings
-cargo test --locked
+cargo test --locked --all-targets
+scripts/demo-check
 ```
 
 The repository forbids unsafe Rust and denies common panic/debug placeholders

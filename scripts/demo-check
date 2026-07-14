@@ -11,33 +11,40 @@ fi
 
 export CARGO_TERM_COLOR=never
 export RUST_BACKTRACE=0
-export AGENTVEIL_DEMO_OFFLINE=1
 umask 077
 
-if ! cargo build --quiet --locked --bin agentveil >/dev/null 2>&1; then
+if ! cargo build --quiet --locked --release --bin agentveil >/dev/null 2>&1; then
   printf '%s\n' 'demo-check: status=fail step=binary_build output=suppressed' >&2
   exit 1
 fi
 
-if ! target/debug/agentveil --help >/dev/null 2>&1; then
+DEMO_BINARY='target/release/agentveil'
+if [[ ! -x "$DEMO_BINARY" ]] || ! "$DEMO_BINARY" --help >/dev/null 2>&1; then
   printf '%s\n' 'demo-check: status=fail step=command_inventory output=suppressed' >&2
   exit 1
 fi
-if ! target/debug/agentveil --help 2>/dev/null \
+if ! "$DEMO_BINARY" --help 2>/dev/null \
   | grep -Eq '^[[:space:]]+demo([[:space:]]|$)'; then
-  printf '%s\n' 'demo-check: status=unavailable reason=demo_command_not_built'
-  exit 0
+  printf '%s\n' 'demo-check: status=fail reason=demo_command_not_built' >&2
+  exit 1
 fi
 
-if env \
-  -u OPENAI_API_KEY \
-  -u ANTHROPIC_API_KEY \
-  -u AZURE_OPENAI_API_KEY \
-  -u AWS_ACCESS_KEY_ID \
-  -u AWS_SECRET_ACCESS_KEY \
-  -u AWS_SESSION_TOKEN \
-  cargo run --quiet --locked -- demo --check >/dev/null 2>&1; then
-  printf '%s\n' 'demo-check: status=pass route=synthetic_loopback output=value_free'
+EXPECTED_OUTPUT='demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free'
+DEMO_CAPTURE="$(mktemp "${TMPDIR:-/tmp}/agentveil-demo-check.XXXXXX" 2>/dev/null)" || {
+  printf '%s\n' 'demo-check: status=fail step=evidence_create output=suppressed' >&2
+  exit 1
+}
+trap 'rm -f -- "$DEMO_CAPTURE" >/dev/null 2>&1 || :' EXIT
+if ! chmod 600 "$DEMO_CAPTURE" >/dev/null 2>&1; then
+  printf '%s\n' 'demo-check: status=fail step=evidence_permissions output=suppressed' >&2
+  exit 1
+fi
+
+if env -i \
+  TMPDIR="${TMPDIR:-/tmp}" \
+  "$DEMO_BINARY" demo --check >"$DEMO_CAPTURE" 2>&1 \
+  && printf '%s\n' "$EXPECTED_OUTPUT" | cmp -s - "$DEMO_CAPTURE"; then
+  printf '%s\n' "$EXPECTED_OUTPUT"
   exit 0
 fi
 

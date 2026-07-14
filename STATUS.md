@@ -1,17 +1,19 @@
 # AgentVeil status
 
-Core evidence anchor: commit `ed09354` on July 14, 2026. The current build adds
-the value-free loopback dashboard and two tests; the final release commit must
-refresh the anchor after rerunning all gates.
+Core evidence was first anchored to commit `ed09354` on July 14, 2026. The
+current release candidate adds the offline demo, value-free loopback dashboard,
+hardened audit sink, benchmark, and stronger release evidence. The generated
+release report is the exact commit/clean-tree anchor.
 
 ## Current state
 
 The core privacy engine, strict Responses payload adapter, authenticated
-loopback gateway, secure Codex launcher, deterministic wire proof, and one live
-synthetic GPT-5.6 Luna tool-replay proof are working. Live restoration remains
-disabled. A read-only value-free dashboard is now implemented on loopback. The
-packaged demo command, benchmark, final release proof, video, and Devpost
-submission remain unfinished.
+loopback gateway, secure Codex launcher, deterministic wire proof, packaged
+offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
+tool-replay proof are working. Live restoration remains disabled. The read-only
+dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
+The final clean release proof, renewed live proof, video, and Devpost submission
+remain.
 
 ## Claim matrix
 
@@ -27,7 +29,8 @@ submission remain unfinished.
 | Session/TTL/capacity token scope | Verified in unit tests | exact lookup, cross-scope denial, expiry, LRU, clear, hard-secret denial |
 | Synthetic SSE display restoration | Verified in tests | every transport split, unsupported sink preservation, malformed/truncated rejection |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Implemented after core anchor | loopback/read-only/value-free, local assets, restrictive browser headers, 2 tests; not wire proof |
+| Dashboard | Verified in current candidate | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
+| Packaged offline demo | Verified in current candidate | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result
@@ -35,10 +38,11 @@ submission remain unfinished.
 `cargo test --locked` on the current build passed:
 
 ```text
-34 library tests passed
+37 library tests passed
 3 CLI tests passed
+1 offline-demo CLI test passed
 1 gateway integration test passed
-38 total; 0 failed
+42 total; 0 failed
 ```
 
 The gateway integration test uses only loopback listeners and synthetic
@@ -64,14 +68,15 @@ the AgentVeil session environment variable as empty.
 
 This proves one dated live path, not every Codex workflow or future CLI version.
 
-## Remaining release work at this anchor
+## Remaining release work
 
-1. Browser-verify the local dashboard and packaged synthetic demo flow.
-2. Run the automated release/leak check on a clean final commit and retain its
-   value-free machine-readable report; install `cargo-audit` first.
-3. Run latency/throughput measurements without weakening fail-closed behavior.
-4. Re-run the complete fake and live proof on the release commit.
-5. Capture the sub-three-minute video and complete the Devpost entry.
+1. Run the automated release/leak check on a clean final commit and retain its
+   private, value-free machine-readable report. RustSec `cargo-audit 0.22.2` is
+   installed and the rehearsal dependency audit passes.
+2. Run the default benchmark on that same commit. Its measurements are complete
+   release-test process timings, not protected-request latency.
+3. Re-run the complete fake and live synthetic proof on the release commit.
+4. Capture the sub-three-minute video and complete the Devpost entry.
 
 The working milestone is July 17, 2026. The Devpost submission deadline is
 July 21, 2026 at 5:00 PM Pacific / 8:00 PM Eastern.

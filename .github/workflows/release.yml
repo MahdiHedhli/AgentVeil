@@ -1,0 +1,95 @@
+name: Release judge artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  create-draft:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --draft
+          --generate-notes
+          --title "AgentVeil $GITHUB_REF_NAME"
+
+  build:
+    needs: create-draft
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+          - runner: macos-14
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup override set 1.95.0
+
+      - name: Test and build
+        run: |
+          cargo test --locked --all-targets
+          cargo build --locked --release --bin agentveil
+          scripts/demo-check
+
+      - name: Package checksummed judge artifact
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -Eeuo pipefail
+          package="agentveil-${GITHUB_REF_NAME}-${PLATFORM}"
+          mkdir -p "dist/$package/policies"
+          install -m 0755 target/release/agentveil "dist/$package/agentveil"
+          install -m 0644 policies/default.yaml policies/demo.yaml policies/strict.yaml "dist/$package/policies/"
+          install -m 0644 LICENSE NOTICE README.md docs/JUDGE_TEST.md "dist/$package/"
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          (cd dist && shasum -a 256 "$package.tar.gz" > "$package.tar.gz.sha256")
+
+      - name: Upload release artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -Eeuo pipefail
+          package="agentveil-${GITHUB_REF_NAME}-${PLATFORM}"
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/$package.tar.gz" \
+            "dist/$package.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release edit "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --draft=false
+          --latest

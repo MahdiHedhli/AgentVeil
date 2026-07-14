@@ -1,12 +1,61 @@
 {
-  "version": 1,
-  "allow_tracked_matches": [
+  "version": 3,
+  "allow_matches": [
     {
+      "sources": ["history"],
       "rule_id": "secret.bearer_literal",
       "sha256": "cbb5c7725195c696a3339fff2d6641447906f41a47fad82755a81e48d71dfaf3",
-      "paths": [
-        "tests/gateway_e2e.rs"
-      ]
+      "content_sha256": "03de7019fcee96bfb8022b970b934ebbcd27f3c69a0a2319c8d2caa05b20251c",
+      "paths": ["tests/gateway_e2e.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.bearer_literal",
+      "sha256": "cbb5c7725195c696a3339fff2d6641447906f41a47fad82755a81e48d71dfaf3",
+      "content_sha256": "1e067e3c5929a1cb5c75a689c60ca597bb4740ecf7ae393af2fbc122c71d8361",
+      "paths": ["tests/gateway_e2e.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.bearer_literal",
+      "sha256": "cbb5c7725195c696a3339fff2d6641447906f41a47fad82755a81e48d71dfaf3",
+      "content_sha256": "cd3aa3774540f50b44b2265a277d9fbb92e9a577cc4a29de2c58c52a59c80ab5",
+      "paths": ["tests/gateway_e2e.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.private_key_header",
+      "sha256": "3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d",
+      "content_sha256": "291db5ddae4f7d1fdd91e1a660913c78d72010f0ea898201c2d0ee7077b0f802",
+      "paths": ["src/detector.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.private_key_header",
+      "sha256": "3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d",
+      "content_sha256": "5a5de5cabe25fc9b27eb64ab75357340e49418168646c5b307e4d91b32101674",
+      "paths": ["src/detector.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.private_key_header",
+      "sha256": "dec643eed02d96980d7003df682d77b28a23f90a6d2a0961886c8953c2e8cb4e",
+      "content_sha256": "1e067e3c5929a1cb5c75a689c60ca597bb4740ecf7ae393af2fbc122c71d8361",
+      "paths": ["tests/gateway_e2e.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.private_key_header",
+      "sha256": "dec643eed02d96980d7003df682d77b28a23f90a6d2a0961886c8953c2e8cb4e",
+      "content_sha256": "5a5de5cabe25fc9b27eb64ab75357340e49418168646c5b307e4d91b32101674",
+      "paths": ["src/detector.rs"]
+    },
+    {
+      "sources": ["history"],
+      "rule_id": "secret.private_key_header",
+      "sha256": "dec643eed02d96980d7003df682d77b28a23f90a6d2a0961886c8953c2e8cb4e",
+      "content_sha256": "cd3aa3774540f50b44b2265a277d9fbb92e9a577cc4a29de2c58c52a59c80ab5",
+      "paths": ["tests/gateway_e2e.rs"]
     }
   ]
 }

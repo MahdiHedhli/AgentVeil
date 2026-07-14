@@ -14,16 +14,19 @@ import sys
 import tempfile
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent
+SCANNER_ID = "agentveil-verify-no-leak-v2"
 DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 DEFAULT_EVIDENCE = ("runtime", "reports/generated")
 ALLOWLIST_PATH = REPO_ROOT / "tests/fixtures/leak-manifest.json"
 REPORT_ROOT = REPO_ROOT / "reports/generated"
+SAFE_PATH_LABEL = re.compile(r"[A-Za-z0-9._+/@-]{1,240}")
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,27 @@ class ScanError:
     source: str
     path: str
     error_id: str
+
+
+@dataclass(frozen=True)
+class RepositoryMetadata:
+    head_commit: str
+    clean_worktree: bool
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """Reject invalid input without reflecting attacker-controlled values."""
+
+    def error(self, message: str) -> None:  # noqa: ARG002
+        print("verify-no-leak: error=invalid_arguments", file=sys.stderr)
+        raise SystemExit(2)
+
+
+@dataclass(frozen=True)
+class HistoryBlob:
+    object_id: str
+    size: int
+    paths: frozenset[str]
 
 
 SECRET_RULES = (
@@ -95,6 +119,10 @@ SECRET_RULES = (
             rb"-----END (?:ENCRYPTED |RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"
         ),
     ),
+    Rule(
+        "secret.private_key_header",
+        re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+    ),
 )
 
 
@@ -127,10 +155,6 @@ EVIDENCE_ONLY_RULES = (
     ),
     Rule("protected.demo_custom_term", re.compile(rb"\bPROJECT-VEIL-DEMO\b")),
     Rule("protected.agentveil_token", re.compile(rb"\[AV_[A-Z0-9_]{8,}\]")),
-    Rule(
-        "secret.private_key_header",
-        re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
-    ),
 )
 
 
@@ -145,11 +169,20 @@ FORBIDDEN_TRACKED_NAMES = frozenset(
         "id_rsa",
     }
 )
-FORBIDDEN_TRACKED_SUFFIXES = (".key", ".p12", ".pfx", ".pem", ".ledger", ".capture")
+FORBIDDEN_TRACKED_SUFFIXES = (
+    ".key",
+    ".p12",
+    ".pfx",
+    ".pem",
+    ".ledger",
+    ".capture",
+    ".audit.jsonl",
+)
+FORBIDDEN_TRACKED_PREFIXES = ("runtime/", "reports/generated/", "dist/", "target/")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         description=(
             "Scan tracked files and repository-local runtime evidence without ever "
             "printing matched values."
@@ -173,6 +206,11 @@ def parse_args() -> argparse.Namespace:
         help="skip Git tracked files (not valid for a release gate)",
     )
     parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="skip unique reachable Git blobs (not valid for a release gate)",
+    )
+    parser.add_argument(
         "--max-bytes",
         type=positive_integer,
         default=DEFAULT_MAX_BYTES,
@@ -182,6 +220,11 @@ def parse_args() -> argparse.Namespace:
         "--report",
         metavar="PATH",
         help="write a value-free JSON report inside this repository",
+    )
+    parser.add_argument(
+        "--rehearsal",
+        action="store_true",
+        help="mark a generated report release-ineligible despite a passing scan",
     )
     return parser.parse_args()
 
@@ -196,12 +239,29 @@ def positive_integer(raw: str) -> int:
     return value
 
 
-def safe_label(path: Path) -> str:
+def repository_relative(path: Path) -> str | None:
     try:
         relative = path.relative_to(REPO_ROOT)
     except ValueError:
+        return None
+    return relative.as_posix()
+
+
+def label_is_safe(label: str) -> bool:
+    if SAFE_PATH_LABEL.fullmatch(label) is None:
+        return False
+    encoded = os.fsencode(label)
+    return not any(
+        rule.pattern.search(encoded)
+        for rule in (*SECRET_RULES, *EVIDENCE_ONLY_RULES)
+    )
+
+
+def safe_label(path: Path) -> str:
+    relative = repository_relative(path)
+    if relative is None:
         return "outside-repository"
-    return relative.as_posix().encode("unicode_escape").decode("ascii")
+    return relative if label_is_safe(relative) else "redacted-path"
 
 
 def is_within_repo(path: Path) -> bool:
@@ -225,44 +285,134 @@ def path_has_symlink(path: Path) -> bool:
     return False
 
 
-def load_allowlist() -> dict[tuple[str, str], frozenset[str]]:
+def load_allowlist() -> dict[tuple[str, str, str, str], frozenset[str]]:
     if not ALLOWLIST_PATH.exists():
         return {}
     if ALLOWLIST_PATH.is_symlink():
         raise ValueError("allowlist is a symlink")
     document = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
-    if document.get("version") != 1 or set(document) != {"version", "allow_tracked_matches"}:
+    if document.get("version") != 3 or set(document) != {"version", "allow_matches"}:
         raise ValueError("allowlist schema is invalid")
 
-    allowed: dict[tuple[str, str], set[str]] = {}
-    for entry in document["allow_tracked_matches"]:
-        if set(entry) != {"rule_id", "sha256", "paths"}:
+    entries = document["allow_matches"]
+    if not isinstance(entries, list):
+        raise ValueError("allowlist entries are invalid")
+    allowed: dict[tuple[str, str, str, str], set[str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {
+            "sources",
+            "rule_id",
+            "sha256",
+            "content_sha256",
+            "paths",
+        }:
             raise ValueError("allowlist entry schema is invalid")
+        sources = entry["sources"]
         rule_id = entry["rule_id"]
         digest = entry["sha256"]
+        content_digest = entry["content_sha256"]
         paths = entry["paths"]
+        if (
+            not isinstance(sources, list)
+            or not sources
+            or len(sources) != len(set(sources))
+            or any(source not in {"tracked", "history"} for source in sources)
+        ):
+            raise ValueError("allowlist sources are invalid")
         if not isinstance(rule_id, str) or not re.fullmatch(r"[a-z0-9_.]+", rule_id):
             raise ValueError("allowlist rule identifier is invalid")
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError("allowlist digest is invalid")
+        if not isinstance(content_digest, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", content_digest
+        ):
+            raise ValueError("allowlist content digest is invalid")
         if not isinstance(paths, list) or not paths:
             raise ValueError("allowlist paths are invalid")
-        key = (rule_id, digest)
         for path in paths:
-            if not isinstance(path, str) or path.startswith(("/", "../")) or "/../" in path:
+            if (
+                not isinstance(path, str)
+                or not path
+                or path.startswith(("/", "../"))
+                or "/../" in path
+                or "\\" in path
+                or "\0" in path
+                or "\n" in path
+                or "\r" in path
+            ):
                 raise ValueError("allowlist path is invalid")
-            allowed.setdefault(key, set()).add(path)
+            for source in sources:
+                allowed.setdefault(
+                    (source, rule_id, digest, content_digest), set()
+                ).add(path)
     return {key: frozenset(paths) for key, paths in allowed.items()}
 
 
-def tracked_paths() -> list[Path]:
+def git_output(arguments: list[str], input_data: bytes | None = None) -> bytes:
     result = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--cached"],
+        ["git", "-C", str(REPO_ROOT), *arguments],
         check=True,
+        input=input_data,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
-    return sorted((REPO_ROOT / os.fsdecode(raw) for raw in result.stdout.split(b"\0") if raw))
+    return result.stdout
+
+
+def repository_metadata() -> RepositoryMetadata:
+    head = git_output(["rev-parse", "--verify", "HEAD"]).strip().decode("ascii")
+    if re.fullmatch(r"[0-9a-f]{40,64}", head) is None:
+        raise ValueError("repository HEAD is invalid")
+    clean = not git_output(["status", "--porcelain=v1", "--untracked-files=all"])
+    return RepositoryMetadata(head_commit=head, clean_worktree=clean)
+
+
+def tracked_paths() -> list[Path]:
+    output = git_output(["ls-files", "-z", "--cached"])
+    return sorted((REPO_ROOT / os.fsdecode(raw) for raw in output.split(b"\0") if raw))
+
+
+def tracked_ignored_paths() -> frozenset[str]:
+    output = git_output(["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"])
+    return frozenset(os.fsdecode(raw) for raw in output.split(b"\0") if raw)
+
+
+def history_blobs() -> list[HistoryBlob]:
+    listing = git_output(["-c", "core.quotePath=false", "rev-list", "--objects", "--all"])
+    object_paths: dict[str, set[str]] = {}
+    for line in listing.splitlines():
+        raw_object, separator, raw_path = line.partition(b" ")
+        object_id = raw_object.decode("ascii")
+        if re.fullmatch(r"[0-9a-f]{40,64}", object_id) is None:
+            raise ValueError("history object identifier is invalid")
+        object_paths.setdefault(object_id, set())
+        if separator and raw_path:
+            object_paths[object_id].add(os.fsdecode(raw_path))
+
+    if not object_paths:
+        return []
+    batch_input = ("\n".join(sorted(object_paths)) + "\n").encode("ascii")
+    checked = git_output(
+        ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
+        batch_input,
+    )
+    blobs: list[HistoryBlob] = []
+    for line in checked.splitlines():
+        parts = line.decode("ascii").split(" ")
+        if len(parts) != 3:
+            raise ValueError("history object metadata is invalid")
+        object_id, object_type, raw_size = parts
+        if object_id not in object_paths or not raw_size.isdigit():
+            raise ValueError("history object metadata is invalid")
+        if object_type == "blob":
+            blobs.append(
+                HistoryBlob(
+                    object_id=object_id,
+                    size=int(raw_size),
+                    paths=frozenset(object_paths[object_id]),
+                )
+            )
+    return sorted(blobs, key=lambda blob: blob.object_id)
 
 
 def evidence_paths(arguments: list[str], include_defaults: bool) -> tuple[list[Path], list[ScanError]]:
@@ -294,7 +444,16 @@ def evidence_paths(arguments: list[str], include_defaults: bool) -> tuple[list[P
             errors.append(ScanError("evidence", label, "unsupported_file_type"))
             continue
 
-        for directory, directory_names, file_names in os.walk(normalized, followlinks=False):
+        def record_walk_error(_error: OSError) -> None:
+            errors.append(
+                ScanError("evidence", safe_label(normalized), "directory_read_failed")
+            )
+
+        for directory, directory_names, file_names in os.walk(
+            normalized,
+            followlinks=False,
+            onerror=record_walk_error,
+        ):
             directory_path = Path(directory)
             kept_directories = []
             for name in sorted(directory_names):
@@ -315,14 +474,63 @@ def evidence_paths(arguments: list[str], include_defaults: bool) -> tuple[list[P
     return sorted(files), errors
 
 
+def match_is_allowed(
+    source: str,
+    rule: Rule,
+    matched: bytes,
+    raw_paths: frozenset[str],
+    allowlist: dict[tuple[str, str, str, str], frozenset[str]],
+    content_digest: str,
+) -> bool:
+    if source not in {"tracked", "history"} or not raw_paths:
+        return False
+    digest = hashlib.sha256(matched).hexdigest()
+    allowed_paths = allowlist.get(
+        (source, rule.identifier, digest, content_digest), frozenset()
+    )
+    return bool(allowed_paths) and raw_paths.issubset(allowed_paths)
+
+
+def scan_content(
+    content: bytes,
+    source: str,
+    label: str,
+    rules: Iterable[Rule],
+    allowlist: dict[tuple[str, str, str, str], frozenset[str]],
+    raw_paths: frozenset[str],
+) -> list[Finding]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, int]] = set()
+    content_digest = hashlib.sha256(content).hexdigest()
+    for rule in rules:
+        for match in rule.pattern.finditer(content):
+            if match_is_allowed(
+                source,
+                rule,
+                match.group(0),
+                raw_paths,
+                allowlist,
+                content_digest,
+            ):
+                continue
+            line = content.count(b"\n", 0, match.start()) + 1
+            identity = (rule.identifier, line)
+            if identity not in seen:
+                seen.add(identity)
+                findings.append(Finding(source, label, line, rule.identifier))
+    return findings
+
+
 def scan_file(
     path: Path,
     source: str,
     rules: Iterable[Rule],
     max_bytes: int,
-    allowlist: dict[tuple[str, str], frozenset[str]],
+    allowlist: dict[tuple[str, str, str, str], frozenset[str]],
 ) -> tuple[list[Finding], list[ScanError]]:
     label = safe_label(path)
+    relative = repository_relative(path)
+    raw_paths = frozenset({relative}) if relative is not None else frozenset()
     try:
         file_status = path.lstat()
     except OSError:
@@ -342,6 +550,11 @@ def scan_file(
         opened_status = os.fstat(descriptor)
         if not stat.S_ISREG(opened_status.st_mode):
             return [], [ScanError(source, label, "unsupported_file_type")]
+        if (file_status.st_dev, file_status.st_ino) != (
+            opened_status.st_dev,
+            opened_status.st_ino,
+        ):
+            return [], [ScanError(source, label, "file_changed_during_scan")]
         with os.fdopen(descriptor, "rb", closefd=True) as input_file:
             descriptor = -1
             content = input_file.read(max_bytes + 1)
@@ -353,35 +566,70 @@ def scan_file(
     if len(content) > max_bytes:
         return [], [ScanError(source, label, "file_too_large")]
 
-    findings: list[Finding] = []
-    seen: set[tuple[str, int]] = set()
-    for rule in rules:
-        for match in rule.pattern.finditer(content):
-            if source == "tracked":
-                digest = hashlib.sha256(match.group(0)).hexdigest()
-                if label in allowlist.get((rule.identifier, digest), frozenset()):
-                    continue
-            line = content.count(b"\n", 0, match.start()) + 1
-            identity = (rule.identifier, line)
-            if identity not in seen:
-                seen.add(identity)
-                findings.append(Finding(source, label, line, rule.identifier))
-    return findings, []
+    return scan_content(content, source, label, rules, allowlist, raw_paths), []
 
 
-def tracked_name_findings(paths: Iterable[Path]) -> list[Finding]:
+def scan_history_blob(
+    blob: HistoryBlob,
+    max_bytes: int,
+    allowlist: dict[tuple[str, str, str, str], frozenset[str]],
+) -> tuple[list[Finding], list[ScanError]]:
+    label = "history-blob"
+    if blob.size > max_bytes:
+        return [], [ScanError("history", label, "object_too_large")]
+    try:
+        content = git_output(["cat-file", "blob", blob.object_id])
+    except subprocess.SubprocessError:
+        return [], [ScanError("history", label, "object_read_failed")]
+    if len(content) != blob.size or len(content) > max_bytes:
+        return [], [ScanError("history", label, "object_size_changed")]
+    return (
+        scan_content(content, "history", label, SECRET_RULES, allowlist, blob.paths),
+        [],
+    )
+
+
+def tracked_name_findings(
+    paths: Iterable[Path], ignored_paths: frozenset[str]
+) -> list[Finding]:
     findings = []
     for path in paths:
+        relative = repository_relative(path)
+        if relative is None:
+            findings.append(
+                Finding("tracked", "outside-repository", 0, "repository.path_outside_repository")
+            )
+            continue
         lower_name = path.name.lower()
-        if lower_name in FORBIDDEN_TRACKED_NAMES or lower_name.endswith(FORBIDDEN_TRACKED_SUFFIXES):
-            findings.append(Finding("tracked", safe_label(path), 0, "repository.forbidden_sensitive_filename"))
+        lower_relative = relative.lower()
+        if relative in ignored_paths:
+            findings.append(
+                Finding("tracked", safe_label(path), 0, "repository.tracked_ignored_path")
+            )
+        forbidden_environment = lower_name == ".env" or (
+            lower_name.startswith(".env.") and lower_name != ".env.example"
+        )
+        forbidden_path = (
+            lower_name in FORBIDDEN_TRACKED_NAMES
+            or forbidden_environment
+            or lower_name.endswith(FORBIDDEN_TRACKED_SUFFIXES)
+            or lower_relative.startswith(FORBIDDEN_TRACKED_PREFIXES)
+        )
+        if forbidden_path:
+            findings.append(
+                Finding("tracked", safe_label(path), 0, "repository.forbidden_sensitive_path")
+            )
     return findings
 
 
 def write_report(
     raw_path: str,
     status: str,
+    release_eligible: bool,
+    metadata: RepositoryMetadata,
+    coverage: dict[str, bool | int],
     tracked_count: int,
+    history_count: int,
     evidence_count: int,
     findings: list[Finding],
     errors: list[ScanError],
@@ -394,8 +642,23 @@ def write_report(
         raise ValueError("report path must be directly under reports/generated")
     if REPORT_ROOT.exists() and path_has_symlink(REPORT_ROOT):
         raise ValueError("report directory must not contain symlinks")
-    REPORT_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path_has_symlink(REPORT_ROOT):
+    reports_parent = REPORT_ROOT.parent
+    try:
+        reports_status = reports_parent.lstat()
+    except OSError as error:
+        raise ValueError("report parent is unavailable") from error
+    if stat.S_ISLNK(reports_status.st_mode) or not stat.S_ISDIR(reports_status.st_mode):
+        raise ValueError("report parent is unsafe")
+    try:
+        REPORT_ROOT.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    report_root_status = REPORT_ROOT.lstat()
+    if (
+        path_has_symlink(REPORT_ROOT)
+        or not stat.S_ISDIR(report_root_status.st_mode)
+        or stat.S_IMODE(report_root_status.st_mode) != 0o700
+    ):
         raise ValueError("report directory must not contain symlinks")
     if report_path.exists() and (report_path.is_symlink() or not report_path.is_file()):
         raise ValueError("report target must be a regular file")
@@ -404,9 +667,18 @@ def write_report(
     error_counts = Counter(error.error_id for error in errors)
     report = {
         "$schema": "../../docs/reports/leak-scan.schema.json",
-        "schema_version": 1,
+        "schema_version": 2,
+        "scanner_id": SCANNER_ID,
+        "generated_at_utc": datetime.now(timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
+        "head_commit": metadata.head_commit,
+        "clean_worktree": metadata.clean_worktree,
         "status": status,
+        "release_eligible": release_eligible,
+        "coverage": coverage,
         "tracked_files_scanned": tracked_count,
+        "history_blobs_scanned": history_count,
         "evidence_files_scanned": evidence_count,
         "finding_counts": [
             {"rule_id": rule_id, "count": count}
@@ -440,10 +712,14 @@ def write_report(
 
 def main() -> int:
     arguments = parse_args()
+    if arguments.rehearsal and not arguments.report:
+        print("verify-no-leak: error=rehearsal_requires_report", file=sys.stderr)
+        return 2
     try:
+        initial_metadata = repository_metadata()
         allowlist = load_allowlist()
-    except (OSError, ValueError, json.JSONDecodeError):
-        print("verify-no-leak: error=allowlist_invalid", file=sys.stderr)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, subprocess.SubprocessError):
+        print("verify-no-leak: error=repository_metadata_or_allowlist_invalid", file=sys.stderr)
         return 2
 
     findings: list[Finding] = []
@@ -452,10 +728,11 @@ def main() -> int:
     if not arguments.no_tracked:
         try:
             tracked = tracked_paths()
+            ignored = tracked_ignored_paths()
         except (OSError, subprocess.SubprocessError):
             print("verify-no-leak: error=git_inventory_failed", file=sys.stderr)
             return 2
-        findings.extend(tracked_name_findings(tracked))
+        findings.extend(tracked_name_findings(tracked, ignored))
         for path in tracked:
             file_findings, file_errors = scan_file(
                 path, "tracked", SECRET_RULES, arguments.max_bytes, allowlist
@@ -463,9 +740,31 @@ def main() -> int:
             findings.extend(file_findings)
             errors.extend(file_errors)
 
+    history_count = 0
+    if not arguments.no_history:
+        try:
+            blobs = history_blobs()
+        except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
+            print("verify-no-leak: error=git_history_inventory_failed", file=sys.stderr)
+            return 2
+        for blob in blobs:
+            blob_findings, blob_errors = scan_history_blob(
+                blob, arguments.max_bytes, allowlist
+            )
+            findings.extend(blob_findings)
+            errors.extend(blob_errors)
+            if not blob_errors:
+                history_count += 1
+
     evidence, evidence_errors = evidence_paths(
         arguments.evidence, not arguments.no_default_evidence
     )
+    if arguments.report:
+        report_path = Path(arguments.report)
+        if not report_path.is_absolute():
+            report_path = REPO_ROOT / report_path
+        report_path = Path(os.path.abspath(report_path))
+        evidence = [path for path in evidence if path != report_path]
     errors.extend(evidence_errors)
     for path in evidence:
         file_findings, file_errors = scan_file(
@@ -478,9 +777,50 @@ def main() -> int:
         findings.extend(file_findings)
         errors.extend(file_errors)
 
+    coverage: dict[str, bool | int] = {
+        "tracked_worktree": not arguments.no_tracked,
+        "git_history": not arguments.no_history,
+        "generated_evidence": bool(evidence),
+        "max_bytes_per_object": arguments.max_bytes,
+    }
+    release_requested = bool(arguments.report) and not arguments.rehearsal
+    try:
+        final_metadata = repository_metadata()
+    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
+        print("verify-no-leak: error=repository_metadata_refresh_failed", file=sys.stderr)
+        return 2
+    repository_stable = initial_metadata.head_commit == final_metadata.head_commit
+    metadata = RepositoryMetadata(
+        head_commit=initial_metadata.head_commit,
+        clean_worktree=(
+            repository_stable
+            and initial_metadata.clean_worktree
+            and final_metadata.clean_worktree
+        ),
+    )
+    if not repository_stable:
+        errors.append(ScanError("release", "release-gate", "repository_head_changed"))
+    if release_requested:
+        if not metadata.clean_worktree:
+            errors.append(ScanError("release", "release-gate", "dirty_worktree"))
+        if arguments.no_tracked or not tracked:
+            errors.append(ScanError("release", "release-gate", "tracked_coverage_missing"))
+        if arguments.no_history or history_count == 0:
+            errors.append(ScanError("release", "release-gate", "history_coverage_missing"))
+        if not evidence:
+            errors.append(ScanError("release", "release-gate", "evidence_coverage_missing"))
+
     findings.sort(key=lambda item: (item.source, item.path, item.line, item.rule_id))
     errors.sort(key=lambda item: (item.source, item.path, item.error_id))
     status = "pass" if not findings and not errors else "fail"
+    release_eligible = bool(
+        release_requested
+        and status == "pass"
+        and metadata.clean_worktree
+        and tracked
+        and history_count > 0
+        and evidence
+    )
 
     for finding in findings:
         print(
@@ -501,7 +841,11 @@ def main() -> int:
             write_report(
                 arguments.report,
                 status,
+                release_eligible,
+                metadata,
+                coverage,
                 len(tracked),
+                history_count,
                 len(evidence),
                 findings,
                 errors,
@@ -512,11 +856,19 @@ def main() -> int:
 
     print(
         "verify-no-leak: "
-        f"status={status} tracked_files={len(tracked)} evidence_files={len(evidence)} "
-        f"findings={len(findings)} scan_errors={len(errors)}"
+        f"status={status} release_eligible={str(release_eligible).lower()} "
+        f"tracked_files={len(tracked)} history_blobs={history_count} "
+        f"evidence_files={len(evidence)} findings={len(findings)} scan_errors={len(errors)}"
     )
     return 0 if status == "pass" else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        print("verify-no-leak: error=interrupted", file=sys.stderr)
+        raise SystemExit(130) from None
+    except Exception:
+        print("verify-no-leak: error=internal_error", file=sys.stderr)
+        raise SystemExit(2) from None

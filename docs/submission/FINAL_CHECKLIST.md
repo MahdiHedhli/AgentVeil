@@ -3,8 +3,10 @@
 ## Deadlines
 
 - **Internal working deadline:** Friday, July 17, 2026. Freeze scope to verified release gates; use the remaining time for evidence, video, and submission QA.
-- **OpenAI API-credit request deadline:** Friday, July 17, 2026 at 12:00 PM Pacific, if credits are needed. Reconfirm this in the organizer materials before relying on it.
+- **$100 Codex credit request deadline:** Friday, July 17, 2026 at 12:00 PM Pacific, for registered entrants while supplies last and subject to approval; approved credits expire July 31.
 - **Final Devpost deadline:** Tuesday, July 21, 2026 at 5:00 PM Pacific / 8:00 PM Eastern.
+- **Judging availability:** Official Rules state July 22 at 10:00 AM Pacific through August 5 at 5:00 PM Pacific; the schedule page lists August 9. Keep every artifact available through August 9.
+- **Winner announcement:** on or around August 12, 2026 at 2:00 PM Pacific.
 - [ ] Put calendar holds ahead of both organizer deadlines; do not plan the final upload for the last hour.
 
 ## Eligibility and submission record
@@ -17,20 +19,24 @@
 ## Public artifacts
 
 - [ ] Repository is public: [github.com/MahdiHedhli/AgentVeil](https://github.com/MahdiHedhli/AgentVeil).
-- [ ] Final commit is pushed; working tree is clean; release SHA is recorded in the README and evidence report.
+- [ ] Final commit is pushed; working tree is clean; release SHA and clean-tree state are recorded in the private generated evidence report.
 - [ ] README accurately states what is verified, how to run the safe deterministic demo, architecture, threat model, limitations, security-reporting path, license, and donor attribution.
 - [ ] Fresh clone on a clean machine/account can build, test, and run the documented demo without private local state.
+- [ ] Prebuilt SHA-256-verified release artifacts work without rebuilding on the stated Ubuntu 24.04 x86_64 and macOS 14+ arm64 judge platforms.
+- [ ] The release page links `docs/JUDGE_TEST.md`, and its offline command works without Codex login, an API key, or an OpenAI request.
 - [ ] Public YouTube video is under 3 minutes, includes voiceover, and visibly demonstrates the product, meaningful Codex use, and meaningful GPT-5.6 use.
 - [ ] Repository, YouTube video, and any demo link open while signed out/incognito and do not request private access.
+- [ ] Keep the repository, video, release artifacts, and instructions free and unrestricted through at least August 9, 2026, covering the longer organizer schedule.
 
 ## Evidence gates
 
-- [ ] Run the complete Rust test suite, strict Clippy, formatting check, leak scanner, and release check on the final commit; record exact results rather than reusing the `ed09354` count.
+- [ ] Run the complete Rust test suite, strict Clippy, formatting check, packaged demo check, benchmark, leak scanner, dependency audit, and release check on the final commit; record exact results rather than reusing an older count.
 - [ ] Re-run the deterministic fake-upstream proof with synthetic fixtures: outbound tokenization, hard-secret block with zero upstream requests, tool-output inspection, fragmented SSE, and value-free audit assertions.
 - [ ] Re-run the real `agentveil codex` launcher proof on the pinned supported Codex CLI and `gpt-5.6-luna` using synthetic values only.
 - [ ] Confirm the protected tool-result reaches the next model turn and the audit contains neither original fixtures nor issued token text.
 - [ ] Confirm live OpenAI restoration remains disabled and the demo does not imply otherwise.
 - [ ] Confirm gateway, dashboard, fake upstream, and verification harness bind only to loopback.
+- [ ] Confirm dashboard assets/state reject a mismatched Host authority and live mode does not claim synthetic wire proof.
 - [ ] Review open risks and limitations; fix release-blocking issues or state unsupported behavior plainly.
 
 ## Devpost copy and media
@@ -44,6 +50,7 @@
 ## Required Codex feedback
 
 - [ ] Run `/feedback` in the **main Codex development task** before the submission deadline.
+- [ ] Copy the returned `/feedback` Session ID into the required Devpost field and `DEVPOST.md`; do not substitute another task's ID.
 - [ ] Review the feedback, incorporate applicable changes, and record a concise disposition for anything intentionally not adopted.
 - [ ] Ensure the final entry explains how Codex materially contributed to architecture, implementation, adversarial review, and verification—not merely that it generated code.
 
@@ -54,6 +61,8 @@
 - [ ] Verify audit/report/dashboard output contains classifications and decisions only.
 - [ ] Verify S0 credentials and private keys remain blocked, never tokenized, and never restorable.
 - [ ] Confirm Apache-2.0 license and donor attribution are preserved.
+- [ ] Confirm all submission copy, captions, audio, and judge instructions are in English.
+- [ ] Confirm video music, imagery, fonts, marks, and other media are original, licensed, or used with authorization.
 
 ## Submit and verify
 

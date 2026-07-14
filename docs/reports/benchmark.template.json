@@ -1,0 +1,35 @@
+{
+  "$schema": "../../docs/reports/benchmark.schema.json",
+  "build_profile": "release",
+  "generated_at_utc": "2026-01-01T00:00:00Z",
+  "git_head_sha": "0000000000000000000000000000000000000000",
+  "iterations_per_scenario": 1,
+  "metric_scope": "whole_test_process_not_request_latency",
+  "network_scope": "cargo_offline_loopback_only",
+  "release_eligible": false,
+  "scenarios": [
+    {
+      "iteration_wall_clock_ms": {
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "p99": 1,
+        "total": 1
+      },
+      "measurement_target": "release_test_process_wall_clock",
+      "sample_count": 1,
+      "scenario_id": "library_protect_restore",
+      "throughput_iterations_per_second": 1000
+    }
+  ],
+  "schema_version": 1,
+  "status": "template",
+  "toolchain": {
+    "cargo_semver": "1.0.0",
+    "rustc_semver": "1.0.0"
+  },
+  "warmup_iterations_per_scenario": 0,
+  "worktree_clean": false
+}

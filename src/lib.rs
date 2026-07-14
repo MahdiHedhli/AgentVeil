@@ -9,6 +9,7 @@
 pub mod audit;
 pub mod audit_sink;
 pub mod dashboard;
+pub mod demo;
 pub mod detector;
 pub mod domain;
 pub mod engine;

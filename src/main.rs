@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 use agentveil::VERSION;
-use agentveil::gateway::{GatewayConfig, UpstreamMode, build_router, serve};
+use agentveil::gateway::{GatewayConfig, SyntheticWireProof, UpstreamMode, build_router, serve};
 use agentveil::ledger::SessionScope;
 use agentveil::policy::ValidatedPolicy;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -47,6 +47,12 @@ enum Commands {
     PolicyValidate {
         #[arg(default_value = "policies/default.yaml")]
         policy: PathBuf,
+    },
+    /// Run the synthetic-only offline proof and local dashboard.
+    Demo {
+        /// Exit after the deterministic proof instead of serving the dashboard.
+        #[arg(long)]
+        check: bool,
     },
     /// Launch Codex through a temporary authenticated AgentVeil session.
     Codex {
@@ -107,6 +113,10 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             );
             Ok(())
         }
+        Commands::Demo { check } => {
+            agentveil::demo::run(check).await?;
+            Ok(())
+        }
         Commands::Codex {
             bind,
             policy,
@@ -127,7 +137,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             let scope = SessionScope::parse(required_env("AGENTVEIL_SESSION_SCOPE")?)?;
             let upstream = match test_upstream {
                 Some(url) => UpstreamMode::loopback_test(url)?,
-                None => UpstreamMode::OpenAi,
+                None => UpstreamMode::openai(),
             };
             serve(GatewayConfig {
                 bind,
@@ -137,6 +147,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 audit_path: audit,
                 upstream,
                 restore_display_text,
+                synthetic_wire_proof: SyntheticWireProof::unmeasured(),
             })
             .await?;
             Ok(())
@@ -183,8 +194,9 @@ async fn launch_codex(
         scope,
         local_session_token: local_session_token.clone(),
         audit_path,
-        upstream: UpstreamMode::OpenAi,
+        upstream: UpstreamMode::openai(),
         restore_display_text: false,
+        synthetic_wire_proof: SyntheticWireProof::unmeasured(),
     })?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let mut gateway_task = tokio::spawn(async move {
@@ -398,11 +410,8 @@ fn doctor() -> Result<(), CliError> {
         "in_use"
     };
     println!(
-        "agentveil={} codex={} auth=available executable={} bind=loopback port_48741={}",
-        VERSION,
-        version,
-        codex.display(),
-        port_status
+        "agentveil={} codex={} auth=available executable=verified_outside_workspace bind=loopback port_48741={}",
+        VERSION, version, port_status
     );
     Ok(())
 }
@@ -451,6 +460,8 @@ enum CliError {
     Scope(#[from] agentveil::ledger::LedgerError),
     #[error("gateway configuration or runtime failed")]
     Gateway(#[from] agentveil::gateway::GatewayError),
+    #[error("offline deterministic demo failed")]
+    Demo(#[from] agentveil::demo::DemoError),
 }
 
 #[cfg(test)]
