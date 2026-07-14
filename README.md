@@ -15,7 +15,7 @@ credential classes, and masks or tokenizes configured lower-risk values.
 
 ## Evidence snapshot
 
-The core route claims were first anchored on July 14, 2026. Release `v0.1.2`
+The core route claims were first anchored on July 14, 2026. Release `v0.1.3`
 includes the deterministic offline demo, value-free dashboard, hardened audit
 sink, benchmark harness, release evidence gates, and a self-contained judge
 archive with its synthetic live-route fixture.
@@ -45,7 +45,7 @@ archive with its synthetic live-route fixture.
   requires the exact loopback authority on every dashboard request, uses local
   assets and restrictive browser headers, and exposes no browser credential.
   Its synthetic proof state is set only by the capturing demo harness.
-- Release `v0.1.2` passes 42 Rust tests: 37 library tests, 3 launcher tests, 1
+- Release `v0.1.3` passes 42 Rust tests: 37 library tests, 3 launcher tests, 1
   offline-demo CLI test, and 1 gateway wire-level integration test. Three
   focused Python regressions cover exact archive packaging, report-directory
   failure handling, and descriptor cleanup.

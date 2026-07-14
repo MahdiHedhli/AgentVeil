@@ -78,7 +78,9 @@ class PackageError(Exception):
     """A fail-closed packaging error with a value-free reason code."""
 
 
-def open_regular(path: Path, *, executable: bool = False) -> BinaryIO:
+def open_regular(
+    path: Path, *, executable: bool = False, allow_source_hardlink: bool = False
+) -> BinaryIO:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -86,7 +88,11 @@ def open_regular(path: Path, *, executable: bool = False) -> BinaryIO:
         raise PackageError("source_open_failed") from error
     try:
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PackageError("source_not_regular_file")
+        if metadata.st_nlink < 1 or (
+            metadata.st_nlink != 1 and not allow_source_hardlink
+        ):
             raise PackageError("source_not_exclusive_regular_file")
         if executable and metadata.st_mode & 0o111 == 0:
             raise PackageError("binary_not_executable")
@@ -135,7 +141,14 @@ def write_exclusive(path: Path, content: bytes, mode: int) -> None:
         os.close(descriptor)
 
 
-def copy_regular(source: Path, destination: Path, mode: int, *, executable: bool = False) -> None:
+def copy_regular(
+    source: Path,
+    destination: Path,
+    mode: int,
+    *,
+    executable: bool = False,
+    allow_source_hardlink: bool = False,
+) -> None:
     flags = (
         os.O_WRONLY
         | os.O_CREAT
@@ -150,7 +163,11 @@ def copy_regular(source: Path, destination: Path, mode: int, *, executable: bool
     failed = False
     try:
         os.fchmod(destination_descriptor, mode)
-        with open_regular(source, executable=executable) as source_stream:
+        with open_regular(
+            source,
+            executable=executable,
+            allow_source_hardlink=allow_source_hardlink,
+        ) as source_stream:
             with os.fdopen(
                 destination_descriptor, "wb", closefd=False
             ) as destination_stream:
@@ -203,7 +220,16 @@ def stage_files(stage_root: Path, binary: Path) -> None:
         os.chmod(destination, DIRECTORY_MODE)
     for spec in PACKAGE_FILES:
         copy_regular(REPO_ROOT / spec.source, stage_root / spec.destination, spec.mode)
-    copy_regular(binary, stage_root / BINARY_SPEC.destination, BINARY_SPEC.mode, executable=True)
+    # Cargo's Linux `link_or_copy` path normally gives this trusted build output
+    # a second hard link. Read that binary snapshot without following symlinks,
+    # then restore the single-link invariant in our private stage.
+    copy_regular(
+        binary,
+        stage_root / BINARY_SPEC.destination,
+        BINARY_SPEC.mode,
+        executable=True,
+        allow_source_hardlink=True,
+    )
 
 
 def validate_stage(stage_root: Path) -> None:

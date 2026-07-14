@@ -1,6 +1,6 @@
 # AgentVeil status
 
-Core evidence was first anchored on July 14, 2026. Release `v0.1.2` includes
+Core evidence was first anchored on July 14, 2026. Release `v0.1.3` includes
 the offline demo, value-free loopback dashboard, hardened audit sink, benchmark,
 release evidence, and the synthetic fixture required by its standalone judge
 archive. Generated release reports bind their results to the exact Git commit
@@ -14,7 +14,7 @@ offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
 tool-replay proof are working. Live restoration remains disabled. The read-only
 dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
 The clean release/leak gate, default benchmark, renewed fake-upstream proof, and
-renewed live synthetic proof passed for release `v0.1.2`. Its prebuilt Ubuntu
+renewed live synthetic proof passed for release `v0.1.3`. Its prebuilt Ubuntu
 x86_64 and macOS arm64 archives are checksum-verified. Final video review and
 upload, running `/feedback`, and completing the Devpost submission remain.
 
@@ -32,8 +32,8 @@ upload, running `/feedback`, and completing the Devpost submission remain.
 | Session/TTL/capacity token scope | Verified in unit tests | exact lookup, cross-scope denial, expiry, LRU, clear, hard-secret denial |
 | Synthetic SSE display restoration | Verified in tests | every transport split, unsupported sink preservation, malformed/truncated rejection |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Verified in release `v0.1.2` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
-| Packaged offline demo | Verified in release `v0.1.2` | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Dashboard | Verified in release `v0.1.3` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
+| Packaged offline demo | Verified in release `v0.1.3` | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result

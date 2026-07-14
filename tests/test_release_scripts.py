@@ -77,8 +77,19 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
             binary = temporary / "agentveil-test-binary"
             binary.write_bytes(b"#!/bin/sh\nexit 0\n")
             binary.chmod(0o700)
+            binary_alias = temporary / "agentveil-test-binary-alias"
+            os.link(binary, binary_alias)
+            self.assertEqual(binary.stat().st_nlink, 2)
+            protected_source = temporary / "protected-source"
+            protected_source.write_bytes(b"synthetic source\n")
+            os.link(protected_source, temporary / "protected-source-alias")
+            with self.assertRaisesRegex(
+                PACKAGE_RELEASE.PackageError,
+                "^source_not_exclusive_regular_file$",
+            ):
+                PACKAGE_RELEASE.sha256_regular(protected_source)
             output = temporary / "dist"
-            tag = "v0.1.2"
+            tag = "v0.1.3"
             platform = "macos-arm64"
             package = f"agentveil-{tag}-{platform}"
             archive = output / f"{package}.tar.gz"
@@ -146,6 +157,10 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
                     PINNED_FIXTURE_SHA256,
                 )
                 self.assertEqual(PACKAGE_RELEASE.FIXTURE_SHA256, PINNED_FIXTURE_SHA256)
+                packaged_binary = release_archive.extractfile(f"{package}/agentveil")
+                if packaged_binary is None:
+                    self.fail("packaged binary is missing")
+                self.assertEqual(packaged_binary.read(), binary.read_bytes())
 
             archive_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             self.assertEqual(
