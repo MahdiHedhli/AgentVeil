@@ -1,7 +1,8 @@
 # Codex Responses payload map
 
-Evidence anchor: commit `ed09354`, Codex CLI `0.144.4`, model
-`gpt-5.6-luna`, HTTP `POST /v1/responses`, `stream: true`.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. Verified scope: Codex CLI `0.144.4`, model `gpt-5.6-luna`, HTTP
+`POST /v1/responses`, `stream: true`.
 
 This map describes what the current adapter accepts and how it handles every
 accepted string. It is not a promise that future Codex versions use the same

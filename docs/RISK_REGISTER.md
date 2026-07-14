@@ -1,16 +1,17 @@
 # Risk register
 
-Evidence anchor: commit `ed09354`. “Controlled” below means controlled only
-inside the exact client/transport/payload boundary in
-[PAYLOAD_MAP.md](PAYLOAD_MAP.md), not universally eliminated.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. “Controlled” below means controlled only inside the exact
+client/transport/payload boundary in [PAYLOAD_MAP.md](PAYLOAD_MAP.md), not
+universally eliminated.
 
 ## Product and implementation risks
 
 | ID | Risk and consequence | Current control / evidence | Status and next gate |
 |---|---|---|---|
-| AV-001 | A future/unsupported Codex field carries model-visible sensitive text. | Unknown top-level/item/content shapes reject; every string/key in an accepted payload is rewrite or block-only; duplicate keys reject. | **Controlled for anchor; recurring.** Any Codex/schema upgrade requires adapter, map, fake-wire, and live-proof refresh. |
-| AV-002 | The loopback gateway becomes an authenticated OpenAI relay. | Loopback-only bind, OS-random local capability, constant-time check, fixed routes/hosts, single-Bearer validation, explicit header/query allowlists, redirects and environment proxies disabled. | **Controlled for anchor.** Add negative route/header regression cases to release suite. |
-| AV-003 | Audit, dashboard, generated report, logs, or terminal output contains originals, mappings, auth, or tokens. | Closed typed audit schema; no body logging; audit unit/file/wire/live scans; dashboard consumes typed audit metadata and has local-asset/no-secret tests; desktop browser and responsive mobile DOM checks passed. | **Controlled in the tested candidate; recurring.** Final clean release/report scan remains a gate. |
+| AV-001 | A future/unsupported Codex field carries model-visible sensitive text. | Unknown top-level/item/content shapes reject; every string/key in an accepted payload is rewrite or block-only; duplicate keys reject. | **Controlled for the current release; recurring.** Any Codex/schema upgrade requires adapter, map, fake-wire, and live-proof refresh. |
+| AV-002 | The loopback gateway becomes an authenticated OpenAI relay. | Loopback-only bind, OS-random local capability, constant-time check, fixed routes/hosts, single-Bearer validation, explicit header/query allowlists, redirects and environment proxies disabled. | **Controlled for the current release.** Add negative route/header regression cases to the recurring release suite. |
+| AV-003 | Audit, dashboard, generated report, logs, or terminal output contains originals, mappings, auth, or tokens. | Closed typed audit schema; no body logging; audit unit/file/wire/live scans; dashboard consumes typed audit metadata and has local-asset/no-secret tests; desktop browser and responsive mobile DOM checks passed. | **Controlled for the current release; recurring.** The clean release/report scan passed and remains a gate after any change. |
 | AV-004 | Restoration crosses sessions, outlives TTL, or enters unsafe fields. | Exact token, session scope, TTL/capacity, unknown-token block, display-field allowlist; unit/SSE tests. | **Controlled in synthetic mode.** Live restoration remains disabled. |
 | AV-005 | Restored originals persist in or replay from local Codex transcripts. | Gateway rejects restoration with OpenAI; live responses remain tokenized. | **Open research / safely disabled.** Do not enable live restoration until transcript lifecycle and replay are independently proven. |
 | AV-006 | An AgentVeil token is split across multiple semantic SSE delta events and fails restoration. | Every transport-byte split of a complete event is tested; unsafe events never restore. | **Open functionality limit.** No privacy regression while live restoration is disabled; semantic reassembly needs bounded state before expansion. |
@@ -30,7 +31,7 @@ inside the exact client/transport/payload boundary in
 | AV-022 | Audit lifecycle is mistaken for delivery proof. | `pending`, `started`, and `failed` states are explicit and reuse an event ID; pre-send pending must flush. | **Documentation-controlled.** A started row does not prove model receipt/completion. |
 | AV-023 | Normal Codex operational headers expose account/project/session metadata despite body protection. | Only an explicit header allowlist is forwarded; cookies/local capability are stripped; values are not logged. | **Accepted functional requirement.** AgentVeil is not an identity anonymizer; minimize allowlist as Codex evidence permits. |
 | AV-024 | Direct `agentveil serve` setup leaks its manually managed environment credential or is misconfigured. | Launcher owns the supported lifecycle; serve validates token/scope, loopback, live/demo separation, and upstream URL. | **Open advanced-interface risk.** Documentation directs live users to `agentveil codex`. |
-| AV-025 | Pre-release dashboard/report/demo claims outrun the core evidence. | Packaged demo asserts capturing-upstream state; live dashboard says wire proof is not measured; browser QA passed; release reports bind status to commit and clean-tree state. | **Controlled for the current candidate.** Clean release/leak, benchmark, fake-wire, and live synthetic gates passed; repeat them after any source change. |
+| AV-025 | Release dashboard/report/demo claims outrun the core evidence. | Packaged demo asserts capturing-upstream state; live dashboard says wire proof is not measured; browser QA passed; release reports bind status to commit and clean-tree state. | **Controlled for the current release.** Clean release/leak, benchmark, fake-wire, and live synthetic gates passed; repeat them after any source change. |
 | AV-026 | A browser reaches the unauthenticated dashboard through DNS rebinding and reads typed local activity. | Every dashboard/state/asset request requires the exact loopback listener Host authority; hostile Host integration test returns `421`; no credential enters browser state. | **Controlled for the tested HTTP dashboard.** Keep loopback-only and do not reverse-proxy or port-forward. |
 
 ## External donor-workspace risks

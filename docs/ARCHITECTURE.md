@@ -1,7 +1,8 @@
 # Architecture
 
-Evidence anchor: commit `ed09354`, Codex CLI `0.144.4`, model
-`gpt-5.6-luna`, HTTP Responses/SSE.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. Verified scope: Codex CLI `0.144.4`, model `gpt-5.6-luna`, HTTP
+Responses/SSE.
 
 AgentVeil is a narrow outbound enforcement point for one explicitly configured
 Codex process. It is not a transparent system proxy, TLS interceptor, or remote

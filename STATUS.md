@@ -1,10 +1,11 @@
 # AgentVeil status
 
-Core evidence was first anchored on July 14, 2026. The current release
-candidate adds the offline demo, value-free loopback dashboard, hardened audit
-sink, benchmark, and stronger release evidence. Generated release reports bind
-their results to the exact Git commit and clean-tree observations; they remain
-private, value-free local evidence rather than committed runtime state.
+Core evidence was first anchored on July 14, 2026. The current public release
+includes the offline demo, value-free loopback dashboard, hardened audit sink,
+benchmark, self-contained judge documentation, and stronger release evidence.
+Generated release reports bind their results to the exact Git commit and
+clean-tree observations; they remain private, value-free local evidence rather
+than committed runtime state.
 
 ## Current state
 
@@ -14,9 +15,9 @@ offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
 tool-replay proof are working. Live restoration remains disabled. The read-only
 dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
 The clean release/leak gate, default benchmark, renewed fake-upstream proof, and
-renewed live synthetic proof passed on the current candidate. Publishing the
-release artifacts, recording the video, running `/feedback`, and completing the
-Devpost submission remain.
+renewed live synthetic proof passed on the current release. Prebuilt Ubuntu
+x86_64 and macOS arm64 artifacts are public and checksum-verified. Recording
+the video, running `/feedback`, and completing the Devpost submission remain.
 
 ## Claim matrix
 
@@ -32,8 +33,8 @@ Devpost submission remain.
 | Session/TTL/capacity token scope | Verified in unit tests | exact lookup, cross-scope denial, expiry, LRU, clear, hard-secret denial |
 | Synthetic SSE display restoration | Verified in tests | every transport split, unsupported sink preservation, malformed/truncated rejection |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Verified in current candidate | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
-| Packaged offline demo | Verified in current candidate | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Dashboard | Verified in current release | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
+| Packaged offline demo | Verified in current release | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result
@@ -74,19 +75,16 @@ AgentVeil session environment variable as empty.
 
 This proves one dated live path, not every Codex workflow or future CLI version.
 
-## Remaining release work
+## Remaining submission work
 
-1. Merge the reviewed candidate, tag it, and verify the public prebuilt archives
-   and SHA-256 files on the supported judge platforms. The archives are not
-   signed or notarized production packages.
-2. Run `/feedback` in the main Codex development task and disposition the
+1. Run `/feedback` in the main Codex development task and disposition the
    resulting feedback.
-3. Capture the public sub-three-minute YouTube video and complete the Devpost
+2. Capture the public sub-three-minute YouTube video and complete the Devpost
    entry.
 
-Any source change before tagging invalidates the current clean-tree evidence
+Any subsequent release source change invalidates the prior clean-tree evidence
 and requires the release/leak gate, default benchmark, and synthetic proofs to
-be repeated.
+be repeated before publishing another tag.
 
 The working milestone is July 17, 2026. The Devpost submission deadline is
 July 21, 2026 at 5:00 PM Pacific / 8:00 PM Eastern.

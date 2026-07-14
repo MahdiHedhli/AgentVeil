@@ -1,7 +1,8 @@
 # Limitations
 
-Evidence anchor: commit `ed09354`. These limits are part of the product
-contract, not a backlog of implied protection.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. These limits are part of the product contract, not a backlog of
+implied protection.
 
 ## Verified client and route only
 

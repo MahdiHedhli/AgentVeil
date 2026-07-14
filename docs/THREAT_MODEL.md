@@ -1,7 +1,8 @@
 # Threat model
 
-Evidence anchor: commit `ed09354`. This model covers the verified Codex CLI
-`0.144.4` HTTP Responses/SSE route only.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. This model covers the verified Codex CLI `0.144.4` HTTP
+Responses/SSE route only.
 
 ## Security objective
 

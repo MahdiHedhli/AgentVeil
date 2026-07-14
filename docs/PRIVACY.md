@@ -1,8 +1,9 @@
 # Privacy and data handling
 
-Evidence anchor: commit `ed09354`. AgentVeil is local software, but “local” does
-not mean “no data is sent to OpenAI.” Its purpose is to change or block supported
-values before a normal Codex model request is sent.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. AgentVeil is local software, but “local” does not mean “no data
+is sent to OpenAI.” Its purpose is to change or block supported values before a
+normal Codex model request is sent.
 
 ## Data AgentVeil receives locally
 

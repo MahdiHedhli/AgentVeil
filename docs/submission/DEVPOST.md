@@ -1,6 +1,6 @@
 # AgentVeil — Devpost draft
 
-> Draft basis: current release candidate. Revalidate every claim against the
+> Draft basis: current public release. Revalidate every claim against the
 > final clean release report before submission.
 
 ## Submission fields

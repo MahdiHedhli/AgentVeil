@@ -255,6 +255,9 @@ if ! grep -Fqx '/runtime/' .gitignore \
   || ! grep -Fq 'raw_logging: false' policies/demo.yaml \
   || ! grep -Fq 'raw_logging: false' policies/strict.yaml \
   || ! grep -Fq 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' .github/workflows/release.yml \
+  || ! grep -Fq 'SECURITY.md' .github/workflows/release.yml \
+  || ! grep -Fq 'STATUS.md' .github/workflows/release.yml \
+  || ! grep -Fq 'docs/DONOR_ATTRIBUTION.md' .github/workflows/release.yml \
   || ! grep -Fq 'persist-credentials: false' .github/workflows/release.yml; then
   fail_check "security_configuration"
 fi

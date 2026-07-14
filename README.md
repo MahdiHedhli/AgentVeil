@@ -15,10 +15,11 @@ credential classes, and masks or tokenizes configured lower-risk values.
 
 ## Evidence snapshot
 
-The core route claims were first anchored to commit `ed09354` (July 14, 2026).
-The current release candidate adds the deterministic offline demo, value-free
-dashboard, hardened audit sink, benchmark harness, and release evidence gates.
-The generated release report records the exact commit and clean-tree state.
+The core route claims were first anchored on July 14, 2026. The current public
+release includes the deterministic offline demo, value-free dashboard,
+hardened audit sink, benchmark harness, self-contained judge documentation,
+and release evidence gates. Generated release reports record the exact commit
+and clean-tree state.
 
 - The secure launcher routes Codex CLI `0.144.4` and `gpt-5.6-luna` through an
   ephemeral loopback provider without changing persistent Codex configuration.
@@ -46,13 +47,14 @@ The generated release report records the exact commit and clean-tree state.
   Its synthetic proof state is set only by the capturing demo harness.
 - `cargo test --locked --all-targets` passes 42 tests: 37 library tests, 3
   launcher tests, 1 offline-demo CLI test, and 1 gateway wire-level integration
-  test.
+  test. Two focused Python regressions cover release-report directory failure
+  handling.
 
 Live OpenAI response restoration is deliberately disabled. Exact-token
 restoration exists only for the loopback synthetic-test mode while local Codex
 transcript persistence remains unverified.
 
-See [STATUS.md](STATUS.md) for the claim matrix and unfinished release work.
+See [STATUS.md](STATUS.md) for the claim matrix and remaining submission work.
 
 ## How it works
 

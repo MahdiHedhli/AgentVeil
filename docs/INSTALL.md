@@ -1,7 +1,7 @@
 # Installation
 
-Evidence anchor: commit `ed09354`; the generated release report supersedes it
-for the current candidate. AgentVeil is pre-release software. Public GitHub
+Generated release reports bind evidence to their exact commit and clean-tree
+observations. AgentVeil is pre-production hackathon software. Public GitHub
 releases provide checksummed judge binaries, but no artifact is Apple-notarized
 or a signed production package.
 
@@ -43,8 +43,8 @@ git rev-parse --short HEAD
 cargo build --release --locked
 ```
 
-For the documented evidence snapshot, the short revision begins with
-`ed09354`. Later release commits should publish their own evidence anchor.
+For a tagged release, verify that the checked-out revision matches the release
+page and its documented evidence anchor before using the claims in this guide.
 
 The binary is created at `target/release/agentveil`. The shipped policy paths
 are relative to the current directory, so the simplest pre-release workflow is

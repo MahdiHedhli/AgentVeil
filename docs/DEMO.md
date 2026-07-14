@@ -1,8 +1,9 @@
 # Demo and verification walkthrough
 
-Evidence anchor: commit `ed09354`. All fixtures below are intentionally
-synthetic. Never substitute a real credential, personal record, customer name,
-internal hostname, or production address.
+Generated release reports bind evidence to the exact Git commit and clean-tree
+observations. All fixtures below are intentionally synthetic. Never substitute
+a real credential, personal record, customer name, internal hostname, or
+production address.
 
 The strongest current demo is the packaged deterministic wire proof. The live
 Codex step demonstrates the verified route and a synthetic tool-output next
