@@ -48,6 +48,9 @@ Devpost submission remain.
 42 total; 0 failed
 ```
 
+Two focused Python regression tests also cover release-report directory error
+classification and descriptor cleanup on benchmark validation failures.
+
 The gateway integration test uses only loopback listeners and synthetic
 fixtures. It verifies:
 

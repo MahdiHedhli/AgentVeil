@@ -215,6 +215,7 @@ required_files=(
   scripts/demo-check
   scripts/release-check
   scripts/verify-no-leak
+  tests/test_release_scripts.py
 )
 
 for required_file in "${required_files[@]}"; do
@@ -259,6 +260,9 @@ if ! grep -Fqx '/runtime/' .gitignore \
 fi
 pass_check "security_configuration"
 run_quiet "benchmark_harness_inventory" scripts/benchmark --help
+run_quiet \
+  "release_script_tests" \
+  python3 -m unittest discover -s tests -p 'test_*.py'
 
 if [[ "$ALLOW_DIRTY" -eq 0 ]]; then
   if [[ -n "$(git status --porcelain=v1 --untracked-files=all)" ]]; then

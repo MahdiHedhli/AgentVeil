@@ -659,9 +659,12 @@ def open_report_directory() -> int:
             )
         except OSError as error:
             raise BenchmarkError("report_directory_unavailable") from error
-        if not os.path.samestat(expected_generated, os.fstat(generated_fd)):
+        try:
+            if not os.path.samestat(expected_generated, os.fstat(generated_fd)):
+                raise BenchmarkError("report_directory_changed")
+        except BaseException:
             os.close(generated_fd)
-            raise BenchmarkError("report_directory_changed")
+            raise
         return generated_fd
     finally:
         os.close(reports_fd)

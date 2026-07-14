@@ -8,11 +8,11 @@
 - **Project name:** AgentVeil
 - **Tagline:** Keep sensitive data out of Codex context.
 - **Planned track:** Developer Tools
-- **Repository:** [github.com/MahdiHedhli/AgentVeil](https://github.com/MahdiHedhli/AgentVeil) — verify it is public at submission time
+- **Repository:** [github.com/MahdiHedhli/AgentVeil](https://github.com/MahdiHedhli/AgentVeil) — public
 - **Public YouTube demo:** `<ADD PUBLIC YOUTUBE URL>`
 - **Demo:** Runs locally with `agentveil demo`; no hosted service or credential
   is required for the offline synthetic proof
-- **Judge test:** [prebuilt release instructions](../JUDGE_TEST.md)
+- **Judge test:** [prebuilt release instructions](https://github.com/MahdiHedhli/AgentVeil/blob/main/docs/JUDGE_TEST.md)
 - **Codex `/feedback` Session ID:** `<ADD SESSION ID FROM THIS MAIN TASK>`
 
 AgentVeil is new Build Week work. Its first repository commit is dated July 14,
@@ -54,8 +54,9 @@ upstream request counter remains unchanged, outbound tokenization, tool-output
 inspection, value-free dashboard state, and audit-content assertions. The
 current Rust suite comprises 42 passing tests—37 library, 3 launcher, 1
 offline-demo CLI, and 1 gateway integration test—and passes strict Clippy. The
-current clean release report binds these counts to its exact commit; the gate
-must be repeated after any subsequent source change.
+release harness adds two Python regressions for secure report-path failure
+handling. The current clean release report binds these counts to its exact
+commit; the gate must be repeated after any subsequent source change.
 
 ## How Codex was used meaningfully
 

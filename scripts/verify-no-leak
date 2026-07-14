@@ -654,12 +654,12 @@ def write_report(
     except FileExistsError:
         pass
     report_root_status = REPORT_ROOT.lstat()
-    if (
-        path_has_symlink(REPORT_ROOT)
-        or not stat.S_ISDIR(report_root_status.st_mode)
-        or stat.S_IMODE(report_root_status.st_mode) != 0o700
-    ):
+    if path_has_symlink(REPORT_ROOT):
         raise ValueError("report directory must not contain symlinks")
+    if not stat.S_ISDIR(report_root_status.st_mode):
+        raise ValueError("report directory must be a directory")
+    if stat.S_IMODE(report_root_status.st_mode) != 0o700:
+        raise ValueError("report directory permissions must be 0700")
     if report_path.exists() and (report_path.is_symlink() or not report_path.is_file()):
         raise ValueError("report target must be a regular file")
 

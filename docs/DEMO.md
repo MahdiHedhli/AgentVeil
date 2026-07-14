@@ -104,8 +104,9 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked --all-targets
 ```
 
-The current build reports 42 passing tests: 37 library, 3 CLI, 1 offline-demo
-CLI, and 1 gateway integration test.
+The current build reports 42 passing Rust tests: 37 library, 3 CLI, 1
+offline-demo CLI, and 1 gateway integration test. Two Python regressions cover
+release-report directory diagnostics and descriptor cleanup.
 
 ## 5. Live synthetic Codex route
 
@@ -188,8 +189,8 @@ A defensible sub-three-minute sequence is:
    assertion.
 4. **Live proof (40 seconds):** run the fixture through `agentveil codex`, show
    `TOKEN_ENV_EMPTY` and `WRAPPER_ROUTE_OK`, then run the quiet audit scan.
-5. **Evidence (25 seconds):** show the payload map, audit schema, 42-test result,
-   and fail-closed boundary.
+5. **Evidence (25 seconds):** show the payload map, audit schema, 42-Rust-test
+   plus 2-release-script-test result, and fail-closed boundary.
 6. **Honest limits (15 seconds):** live restoration disabled; no IDE/cloud/
    WebSocket/media/universal-DLP claim.
 
