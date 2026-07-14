@@ -1,7 +1,7 @@
 # AgentVeil — Devpost draft
 
-> Draft basis: current public release. Revalidate every claim against the
-> final clean release report before submission.
+> Draft basis: public release `v0.1.2`. Revalidate every claim against its
+> clean release report before submission.
 
 ## Submission fields
 
@@ -54,9 +54,10 @@ upstream request counter remains unchanged, outbound tokenization, tool-output
 inspection, value-free dashboard state, and audit-content assertions. The
 current Rust suite comprises 42 passing tests—37 library, 3 launcher, 1
 offline-demo CLI, and 1 gateway integration test—and passes strict Clippy. The
-release harness adds two Python regressions for secure report-path failure
-handling. The current clean release report binds these counts to its exact
-commit; the gate must be repeated after any subsequent source change.
+release harness adds three Python regressions covering exact archive
+construction, secure report-path failure handling, and descriptor cleanup. The
+clean release report binds these counts to its exact commit; the gate must be
+repeated after any subsequent source change.
 
 ## How Codex was used meaningfully
 
@@ -66,7 +67,7 @@ At runtime, AgentVeil launches Codex through an invocation-scoped custom provide
 
 ## How GPT-5.6 was used meaningfully
 
-The verified live route uses `gpt-5.6-luna` through Codex's OpenAI Responses provider. A synthetic live validation exercised a multi-turn tool flow: Codex read synthetic local values, AgentVeil protected the subsequent `custom_tool_output`, and GPT-5.6 completed the next turn through the protected route. The audit was checked for absence of the original synthetic values and token text.
+The verified live route uses `gpt-5.6-luna` through Codex's OpenAI Responses provider. A synthetic live validation exercised a multi-turn tool flow: Codex read synthetic local values, AgentVeil protected the subsequent `custom_tool_output`, and GPT-5.6 completed the next turn through the protected route. The audit recorded rewritten finding metadata without body values or token text; the capturing fake-upstream test remains the wire-boundary proof.
 
 GPT-5.6 is therefore not a label on a standalone API call: it is the model on the actual protected Codex workflow the project is designed to enable.
 

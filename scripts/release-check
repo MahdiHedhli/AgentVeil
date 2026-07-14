@@ -207,12 +207,14 @@ required_files=(
   docs/reports/leak-scan.template.json
   docs/SECURITY_INVARIANTS.md
   docs/THREAT_MODEL.md
+  fixtures/demo/synthetic-context.txt
   policies/default.yaml
   policies/demo.yaml
   policies/strict.yaml
   reports/README.md
   scripts/benchmark
   scripts/demo-check
+  scripts/package-release
   scripts/release-check
   scripts/verify-no-leak
   tests/test_release_scripts.py
@@ -227,6 +229,7 @@ pass_check "required_files"
 
 if [[ ! -x scripts/benchmark \
   || ! -x scripts/demo-check \
+  || ! -x scripts/package-release \
   || ! -x scripts/release-check \
   || ! -x scripts/verify-no-leak ]]; then
   fail_check "script_permissions"
@@ -255,13 +258,16 @@ if ! grep -Fqx '/runtime/' .gitignore \
   || ! grep -Fq 'raw_logging: false' policies/demo.yaml \
   || ! grep -Fq 'raw_logging: false' policies/strict.yaml \
   || ! grep -Fq 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' .github/workflows/release.yml \
-  || ! grep -Fq 'SECURITY.md' .github/workflows/release.yml \
-  || ! grep -Fq 'STATUS.md' .github/workflows/release.yml \
-  || ! grep -Fq 'docs/DONOR_ATTRIBUTION.md' .github/workflows/release.yml \
+  || ! grep -Fq 'SECURITY.md' scripts/package-release \
+  || ! grep -Fq 'STATUS.md' scripts/package-release \
+  || ! grep -Fq 'docs/DONOR_ATTRIBUTION.md' scripts/package-release \
+  || ! grep -Fq 'scripts/package-release' .github/workflows/release.yml \
+  || ! grep -Fq '6d6e4246fcdfe0c19f19f696e8c64ed1432c58665718b28269ca61a8a69cc735' scripts/package-release \
   || ! grep -Fq 'persist-credentials: false' .github/workflows/release.yml; then
   fail_check "security_configuration"
 fi
 pass_check "security_configuration"
+run_quiet "package_harness_inventory" scripts/package-release --help
 run_quiet "benchmark_harness_inventory" scripts/benchmark --help
 run_quiet \
   "release_script_tests" \

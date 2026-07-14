@@ -11,13 +11,19 @@ turn, but it is not a replacement for the capturing-upstream zero-connect test.
 
 ## 1. Preflight
 
-From the repository root:
+From an extracted release archive or the repository root, select the binary for
+that layout. A source checkout builds first; an archive does not need Cargo:
 
 ```sh
-cargo build --release --locked
-./target/release/agentveil doctor
-./target/release/agentveil policy-validate policies/default.yaml
-./target/release/agentveil policy-validate policies/demo.yaml
+if [ -x ./agentveil ]; then
+  AGENTVEIL_BIN=./agentveil
+else
+  cargo build --release --locked
+  AGENTVEIL_BIN=./target/release/agentveil
+fi
+"$AGENTVEIL_BIN" doctor
+"$AGENTVEIL_BIN" policy-validate policies/default.yaml
+"$AGENTVEIL_BIN" policy-validate policies/demo.yaml
 ```
 
 `doctor` must report Codex `0.144.4`, available authentication, and loopback
@@ -28,7 +34,7 @@ binding. The policy commands print only name/hash/status metadata.
 For the release-safe, value-free check:
 
 ```sh
-./target/release/agentveil demo --check
+"$AGENTVEIL_BIN" demo --check
 ```
 
 Exact expected output:
@@ -40,7 +46,7 @@ demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_c
 To keep its dashboard open:
 
 ```sh
-./target/release/agentveil demo
+"$AGENTVEIL_BIN" demo
 ```
 
 Open the printed loopback URL, then stop the process with Ctrl-C. The command
@@ -53,6 +59,10 @@ The dashboard's “Synthetic wire proof: Passed” state is available only in th
 capturing harness. A normal live session truthfully displays “Not measured.”
 
 ## 3. Inspect the focused deterministic wire test
+
+This source-only test requires the public repository checkout and Rust
+toolchain. Archive users can skip to the live synthetic route after the
+packaged proof.
 
 ```sh
 cargo test --locked \
@@ -106,14 +116,15 @@ cargo test --locked --all-targets
 ```
 
 The current build reports 42 passing Rust tests: 37 library, 3 CLI, 1
-offline-demo CLI, and 1 gateway integration test. Two Python regressions cover
-release-report directory diagnostics and descriptor cleanup.
+offline-demo CLI, and 1 gateway integration test. Three Python regressions
+cover exact archive construction and inspection, release-report directory
+diagnostics, and descriptor cleanup.
 
 ## 5. Live synthetic Codex route
 
 This step contacts OpenAI using existing Codex login state. It demonstrates one
-dated live path only. Keep `--ephemeral` and use the repository fixture exactly
-as shipped.
+dated live path only. Keep `--ephemeral` and use the synthetic fixture included
+in both the repository and release archive exactly as shipped.
 
 First inspect the fixture so the audience can see that every value is labeled
 synthetic:
@@ -129,12 +140,14 @@ AUDIT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentveil-live-demo.XXXXXX")"
 chmod 700 "$AUDIT_DIR"
 AUDIT_PATH="$AUDIT_DIR/audit.jsonl"
 trap 'rm -f "$AUDIT_PATH"; rmdir "$AUDIT_DIR"' EXIT
-./target/release/agentveil codex \
+"$AGENTVEIL_BIN" codex \
   --reasoning-effort none \
   --audit "$AUDIT_PATH" \
   -- \
   exec --ephemeral --skip-git-repo-check \
-  'Use one local shell command to read fixtures/demo/synthetic-context.txt and report TOKEN_ENV_EMPTY if AGENTVEIL_SESSION_TOKEN is empty in that shell. Then reply with exactly WRAPPER_ROUTE_OK. Do not repeat any fixture value.'
+  'Use exactly one local shell tool call. Its command must be exactly:
+sed -n "2,3p" fixtures/demo/synthetic-context.txt; if [ -z "${AGENTVEIL_SESSION_TOKEN:-}" ]; then printf "%s\n" TOKEN_ENV_EMPTY; else printf "%s\n" TOKEN_ENV_PRESENT; fi
+Do not redirect, pipe, truncate, or suppress stdout. After the tool result arrives, do not quote it; reply exactly WRAPPER_ROUTE_OK.'
 ```
 
 The launcher prints a pseudonymous session, Responses/SSE transport, ephemeral
@@ -149,11 +162,18 @@ While the session is active, open
 and deliberately unauthenticated because its state is value-free and no gateway
 credential should enter browser state. Show it as visibility, not wire proof.
 
-The shell output may visibly contain the known synthetic fixture because it is
-local. The privacy assertion concerns the next model request: the gateway scans
-the tool output before forwarding it. Live response restoration is disabled, so
-the model receives the configured mask/token replacements, not restored
-originals.
+The shell output visibly contains only the known synthetic email and private-IP
+lines because it is local. Those classes are protected by the live default
+policy. The project label is configured only by the loopback-only demo policy
+and is deliberately excluded from this live tool output. The privacy assertion
+concerns the next model request: the gateway scans the tool output before
+forwarding it. Live response restoration is disabled, so the model receives the
+configured mask/token replacements, not restored originals.
+
+The first dashboard request row can be `Structure accepted`; it contains the
+safe instruction. The next row must show protected finding metadata for the
+tool output. If it also says `No protected class was present`, stop: the tool did
+not return the fixture text in a supported output field.
 
 Check the audit without printing its contents:
 
@@ -163,7 +183,7 @@ test -f "$AUDIT_PATH" && test -r "$AUDIT_PATH" || {
   exit 1
 }
 set +e
-rg -q 'ava\.agentveil@example\.test|10\.24\.8\.15|PROJECT-VEIL-DEMO|\[AV_' "$AUDIT_PATH"
+rg -q 'ava\.agentveil@example\.test|10\.24\.8\.15|\[AV_' "$AUDIT_PATH"
 scan_status=$?
 set -e
 case "$scan_status" in
@@ -171,11 +191,21 @@ case "$scan_status" in
   1) echo 'PASS: audit contains no synthetic originals or AgentVeil tokens' ;;
   *) echo 'FAIL: audit scan could not complete'; exit 1 ;;
 esac
+
+if rg -q '"decision":"rewritten"' "$AUDIT_PATH" \
+  && rg -q '"data_class":"email"' "$AUDIT_PATH" \
+  && rg -q '"data_class":"private_ipv4"' "$AUDIT_PATH" \
+  && rg -q '"source_field":"(custom_tool_output|function_output)"' "$AUDIT_PATH"; then
+  echo 'PASS: audit contains rewritten synthetic tool-output finding metadata'
+else
+  echo 'FAIL: expected rewritten tool-output metadata is missing'
+  exit 1
+fi
 ```
 
-This audit check is useful evidence, but it does not capture the OpenAI wire.
-The fake-upstream test remains the proof of what crossed the controlled egress
-boundary.
+These audit checks confirm the dated route decision and audit-value invariant;
+they do not capture the OpenAI wire. The fake-upstream test remains the proof of
+what crossed the controlled egress boundary.
 
 ## 6. What to show in a short video
 
@@ -191,7 +221,7 @@ A defensible sub-three-minute sequence is:
 4. **Live proof (40 seconds):** run the fixture through `agentveil codex`, show
    `TOKEN_ENV_EMPTY` and `WRAPPER_ROUTE_OK`, then run the quiet audit scan.
 5. **Evidence (25 seconds):** show the payload map, audit schema, 42-Rust-test
-   plus 2-release-script-test result, and fail-closed boundary.
+   plus 3-release-script-test result, and fail-closed boundary.
 6. **Honest limits (15 seconds):** live restoration disabled; no IDE/cloud/
    WebSocket/media/universal-DLP claim.
 

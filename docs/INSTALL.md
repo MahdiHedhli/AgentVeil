@@ -30,6 +30,11 @@ follow [JUDGE_TEST.md](JUDGE_TEST.md). The resulting one-command proof is:
 
 It needs no Codex installation, login, API key, or OpenAI request.
 
+Inside an extracted release archive the executable is `./agentveil`. Commands
+below that use `./target/release/agentveil` apply after the source-build step.
+The packaged [demo walkthrough](DEMO.md) selects the correct path for either
+layout.
+
 Do not disable the exact Codex version check to make another release work. A
 client upgrade changes the protocol evidence boundary and requires a refreshed
 payload map, fake-upstream proof, and live synthetic proof.

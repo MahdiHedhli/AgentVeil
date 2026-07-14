@@ -52,6 +52,8 @@ jobs:
 
       - name: Test and build
         run: |
+          PYTHONDONTWRITEBYTECODE=1 \
+            python3 -m unittest discover -s tests -p 'test_*.py'
           cargo test --locked --all-targets
           cargo build --locked --release --bin agentveil
           scripts/demo-check
@@ -61,26 +63,11 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           set -Eeuo pipefail
-          package="agentveil-${GITHUB_REF_NAME}-${PLATFORM}"
-          mkdir -p "dist/$package/policies" "dist/$package/docs"
-          install -m 0755 target/release/agentveil "dist/$package/agentveil"
-          install -m 0644 policies/default.yaml policies/demo.yaml policies/strict.yaml "dist/$package/policies/"
-          install -m 0644 LICENSE NOTICE README.md SECURITY.md STATUS.md docs/JUDGE_TEST.md "dist/$package/"
-          install -m 0644 \
-            docs/ARCHITECTURE.md \
-            docs/DEMO.md \
-            docs/DONOR_ATTRIBUTION.md \
-            docs/INSTALL.md \
-            docs/JUDGE_TEST.md \
-            docs/LIMITATIONS.md \
-            docs/PAYLOAD_MAP.md \
-            docs/PRIVACY.md \
-            docs/RISK_REGISTER.md \
-            docs/SECURITY_INVARIANTS.md \
-            docs/THREAT_MODEL.md \
-            "dist/$package/docs/"
-          tar -C dist -czf "dist/$package.tar.gz" "$package"
-          (cd dist && shasum -a 256 "$package.tar.gz" > "$package.tar.gz.sha256")
+          scripts/package-release \
+            --tag "$GITHUB_REF_NAME" \
+            --platform "$PLATFORM" \
+            --binary target/release/agentveil \
+            --output-dir dist
 
       - name: Upload release artifact
         env:
