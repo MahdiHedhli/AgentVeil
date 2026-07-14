@@ -38,9 +38,9 @@ archive with its synthetic live-route fixture.
   tokens, authorization material, or response text. Audit persistence is a
   pre-egress gate for protected Responses requests.
 - A synthetic live run exercised Codex tool output on a next GPT-5.6 Luna turn.
-  The audit recorded rewritten email and private-IPv4 finding metadata without
-  body values or tokens. This is route evidence; the capturing fake-upstream
-  demo remains the wire-boundary proof.
+  The audit recorded metadata for rewritten email and private-IPv4 findings,
+  without body values or tokens. This is route evidence; the capturing
+  fake-upstream demo remains the wire-boundary proof.
 - The read-only dashboard serves only typed enforcement metadata from loopback,
   requires the exact loopback authority on every dashboard request, uses local
   assets and restrictive browser headers, and exposes no browser credential.
