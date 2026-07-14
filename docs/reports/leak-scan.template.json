@@ -1,0 +1,9 @@
+{
+  "$schema": "../../docs/reports/leak-scan.schema.json",
+  "evidence_files_scanned": 0,
+  "finding_counts": [],
+  "scan_error_counts": [],
+  "schema_version": 1,
+  "status": "pass",
+  "tracked_files_scanned": 0
+}

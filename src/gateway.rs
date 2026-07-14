@@ -1,8 +1,9 @@
+use std::collections::VecDeque;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_stream::stream;
@@ -24,6 +25,7 @@ use zeroize::Zeroizing;
 use crate::VERSION;
 use crate::audit::{AuditDecision, AuditEvent, AuditFinding, UpstreamOutcome};
 use crate::audit_sink::{AuditSink, AuditSinkError};
+use crate::dashboard::{self, DashboardActivity, DashboardSnapshot};
 use crate::engine::{
     EngineError, ForwardDecision, PrivacyEngine, ProtectionOutcome, ProtectionSummary,
 };
@@ -36,6 +38,7 @@ const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/respo
 const CHATGPT_MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 const API_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const API_MODELS_URL: &str = "https://api.openai.com/v1/models";
+const DASHBOARD_ACTIVITY_LIMIT: usize = 64;
 
 pub struct GatewayConfig {
     pub bind: SocketAddr,
@@ -93,6 +96,7 @@ struct GatewayState {
     policy_hash: String,
     started: Instant,
     request_sequence: AtomicU64,
+    dashboard_activity: StdMutex<VecDeque<DashboardActivity>>,
 }
 
 pub async fn serve(config: GatewayConfig) -> Result<(), GatewayError> {
@@ -154,14 +158,94 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         policy_hash,
         started: Instant::now(),
         request_sequence: AtomicU64::new(0),
+        dashboard_activity: StdMutex::new(VecDeque::with_capacity(DASHBOARD_ACTIVITY_LIMIT)),
     });
     Ok(Router::new()
         .route("/health", get(health))
+        .route("/dashboard", get(dashboard_page))
+        .route("/dashboard/app.css", get(dashboard_css))
+        .route("/dashboard/app.js", get(dashboard_js))
+        .route("/dashboard/state", get(dashboard_state))
         .route("/v1/models", get(models))
         .route("/v1/responses", post(responses))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(max_request_bytes))
         .with_state(state))
+}
+
+async fn dashboard_page() -> Response {
+    dashboard_asset(dashboard::HTML, "text/html; charset=utf-8")
+}
+
+async fn dashboard_css() -> Response {
+    dashboard_asset(dashboard::CSS, "text/css; charset=utf-8")
+}
+
+async fn dashboard_js() -> Response {
+    dashboard_asset(dashboard::JS, "text/javascript; charset=utf-8")
+}
+
+async fn dashboard_state(State(state): State<Arc<GatewayState>>) -> Response {
+    let activity = state
+        .dashboard_activity
+        .lock()
+        .map(|activity| activity.iter().cloned().collect())
+        .unwrap_or_default();
+    let snapshot = DashboardSnapshot {
+        schema_version: 1,
+        protected: true,
+        binding: "loopback",
+        transport: "responses_sse",
+        upstream: state.upstream.label(),
+        restoration: if state.restore_display_text {
+            "synthetic_display_only"
+        } else {
+            "disabled"
+        },
+        audit_healthy: state.audit_healthy.load(Ordering::Acquire),
+        session_pseudonym: state.session_pseudonym.clone(),
+        policy_name: state.policy_name.clone(),
+        request_count: state.request_sequence.load(Ordering::Relaxed),
+        originals_forwarded: 0,
+        activity,
+    };
+    let mut response = axum::Json(snapshot).into_response();
+    apply_dashboard_headers(response.headers_mut());
+    response
+}
+
+fn dashboard_asset(body: &'static str, content_type: &'static str) -> Response {
+    let mut response = Response::new(Body::from(body));
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+    apply_dashboard_headers(response.headers_mut());
+    response
+}
+
+fn apply_dashboard_headers(headers: &mut HeaderMap) {
+    const SECURITY_HEADERS: [(&str, &str); 8] = [
+        (
+            "content-security-policy",
+            "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        ),
+        ("cache-control", "no-store, max-age=0"),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "DENY"),
+        ("referrer-policy", "no-referrer"),
+        (
+            "permissions-policy",
+            "camera=(), microphone=(), geolocation=()",
+        ),
+        ("cross-origin-opener-policy", "same-origin"),
+        ("cross-origin-resource-policy", "same-origin"),
+    ];
+    for (name, value) in SECURITY_HEADERS {
+        headers.insert(
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        );
+    }
 }
 
 async fn health(State(state): State<Arc<GatewayState>>) -> impl IntoResponse {
@@ -534,15 +618,44 @@ fn write_audit(
         state.policy_hash.clone(),
         VERSION.to_string(),
     );
-    let result = event
-        .map_err(|_| ())
-        .and_then(|event| state.audit.write(&event).map_err(|_| ()));
-    if result.is_err() {
+    let event = match event {
+        Ok(event) => event,
+        Err(_) => {
+            state.audit_healthy.store(false, Ordering::Relaxed);
+            tracing::warn!("AgentVeil audit metadata validation failed");
+            return false;
+        }
+    };
+    if state.audit.write(&event).is_err() {
         state.audit_healthy.store(false, Ordering::Relaxed);
         tracing::warn!("AgentVeil audit sink is degraded");
         return false;
     }
+    record_dashboard_activity(state, &event);
     true
+}
+
+fn record_dashboard_activity(state: &GatewayState, event: &AuditEvent) {
+    let Ok(mut activity) = state.dashboard_activity.lock() else {
+        return;
+    };
+    if let Some(existing) = activity
+        .iter_mut()
+        .find(|item| item.request_sequence == event.request_sequence)
+    {
+        existing.upstream_outcome = event.upstream_outcome;
+        existing.scan_latency_ms = event.scan_latency_ms;
+        return;
+    }
+    activity.push_front(DashboardActivity {
+        request_sequence: event.request_sequence,
+        timestamp_unix_ms: event.timestamp_unix_ms,
+        decision: event.decision,
+        findings: event.findings.clone(),
+        upstream_outcome: event.upstream_outcome,
+        scan_latency_ms: event.scan_latency_ms,
+    });
+    activity.truncate(DASHBOARD_ACTIVITY_LIMIT);
 }
 
 fn audit_decision(decision: ForwardDecision) -> AuditDecision {

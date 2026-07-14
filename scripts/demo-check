@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd -P)"
+cd "$ROOT_DIR"
+
+if [[ "$#" -ne 0 ]]; then
+  printf '%s\n' 'usage: scripts/demo-check' >&2
+  exit 2
+fi
+
+export CARGO_TERM_COLOR=never
+export RUST_BACKTRACE=0
+export AGENTVEIL_DEMO_OFFLINE=1
+umask 077
+
+if ! cargo build --quiet --locked --bin agentveil >/dev/null 2>&1; then
+  printf '%s\n' 'demo-check: status=fail step=binary_build output=suppressed' >&2
+  exit 1
+fi
+
+if ! target/debug/agentveil --help >/dev/null 2>&1; then
+  printf '%s\n' 'demo-check: status=fail step=command_inventory output=suppressed' >&2
+  exit 1
+fi
+if ! target/debug/agentveil --help 2>/dev/null \
+  | grep -Eq '^[[:space:]]+demo([[:space:]]|$)'; then
+  printf '%s\n' 'demo-check: status=unavailable reason=demo_command_not_built'
+  exit 0
+fi
+
+if env \
+  -u OPENAI_API_KEY \
+  -u ANTHROPIC_API_KEY \
+  -u AZURE_OPENAI_API_KEY \
+  -u AWS_ACCESS_KEY_ID \
+  -u AWS_SECRET_ACCESS_KEY \
+  -u AWS_SESSION_TOKEN \
+  cargo run --quiet --locked -- demo --check >/dev/null 2>&1; then
+  printf '%s\n' 'demo-check: status=pass route=synthetic_loopback output=value_free'
+  exit 0
+fi
+
+printf '%s\n' 'demo-check: status=fail step=deterministic_rehearsal output=suppressed' >&2
+exit 1

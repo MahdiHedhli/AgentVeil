@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentveil.dev/schemas/leak-scan.schema.json",
+  "title": "AgentVeil value-free leak scan report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "status",
+    "tracked_files_scanned",
+    "evidence_files_scanned",
+    "finding_counts",
+    "scan_error_counts"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "../../docs/reports/leak-scan.schema.json"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "tracked_files_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evidence_files_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "finding_counts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding_count"
+      }
+    },
+    "scan_error_counts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error_count"
+      }
+    }
+  },
+  "$defs": {
+    "finding_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "count"],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.]+$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "error_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error_id", "count"],
+      "properties": {
+        "error_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

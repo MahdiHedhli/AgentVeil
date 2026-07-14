@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd -P)"
+cd "$ROOT_DIR"
+
+ALLOW_DIRTY=0
+ALLOW_MISSING_CARGO_AUDIT=0
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --allow-dirty)
+      ALLOW_DIRTY=1
+      ;;
+    --allow-missing-cargo-audit)
+      ALLOW_MISSING_CARGO_AUDIT=1
+      ;;
+    *)
+      printf '%s\n' \
+        'usage: scripts/release-check [--allow-dirty] [--allow-missing-cargo-audit]' >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+export CARGO_TERM_COLOR=never
+export RUST_BACKTRACE=0
+export RUST_TEST_THREADS=1
+umask 077
+
+STEP_COUNT=0
+run_quiet() {
+  local step_id="$1"
+  shift
+  STEP_COUNT=$((STEP_COUNT + 1))
+  printf 'release-check: step=%s status=running\n' "$step_id"
+  if "$@" >/dev/null 2>&1; then
+    printf 'release-check: step=%s status=pass\n' "$step_id"
+    return 0
+  else
+    local exit_status=$?
+    printf 'release-check: step=%s status=fail output=suppressed\n' "$step_id" >&2
+    return "$exit_status"
+  fi
+}
+
+fail_check() {
+  local check_id="$1"
+  printf 'release-check: step=%s status=fail\n' "$check_id" >&2
+  exit 1
+}
+
+pass_check() {
+  local check_id="$1"
+  STEP_COUNT=$((STEP_COUNT + 1))
+  printf 'release-check: step=%s status=pass\n' "$check_id"
+}
+
+required_files=(
+  AGENTS.md
+  Cargo.lock
+  Cargo.toml
+  LICENSE
+  NOTICE
+  README.md
+  SECURITY.md
+  docs/ARCHITECTURE.md
+  docs/CODEX_PAYLOAD_MAP.md
+  docs/DEMO.md
+  docs/DONOR_ATTRIBUTION.md
+  docs/INSTALL.md
+  docs/LIMITATIONS.md
+  docs/PRIVACY.md
+  docs/SECURITY_INVARIANTS.md
+  docs/THREAT_MODEL.md
+  policies/default.yaml
+  policies/demo.yaml
+  policies/strict.yaml
+  scripts/demo-check
+  scripts/release-check
+  scripts/verify-no-leak
+)
+
+for required_file in "${required_files[@]}"; do
+  if [[ ! -f "$required_file" || -L "$required_file" || ! -s "$required_file" ]]; then
+    fail_check "required_file"
+  fi
+done
+pass_check "required_files"
+
+if [[ ! -x scripts/demo-check || ! -x scripts/release-check || ! -x scripts/verify-no-leak ]]; then
+  fail_check "script_permissions"
+fi
+pass_check "script_permissions"
+
+if ! grep -Fq 'Apache License' LICENSE \
+  || ! grep -Fq 'Version 2.0, January 2004' LICENSE \
+  || ! grep -Eq '^license = "Apache-2\.0"$' Cargo.toml \
+  || ! grep -Fq 'PromptFence' NOTICE \
+  || ! grep -Fq 'PromptGuard' NOTICE \
+  || ! grep -Fq 'PromptGate' NOTICE \
+  || ! grep -Fq 'PromptFence' docs/DONOR_ATTRIBUTION.md \
+  || ! grep -Fq 'PromptGuard' docs/DONOR_ATTRIBUTION.md \
+  || ! grep -Fq 'PromptGate' docs/DONOR_ATTRIBUTION.md; then
+  fail_check "license_attribution"
+fi
+pass_check "license_attribution"
+
+if ! grep -Fqx '/runtime/' .gitignore \
+  || ! grep -Fqx '/reports/generated/' .gitignore \
+  || ! grep -Fqx '.env' .gitignore \
+  || ! grep -Fqx '*.audit.jsonl' .gitignore \
+  || ! grep -Fq 'unsafe_code = "forbid"' Cargo.toml \
+  || ! grep -Fq 'raw_logging: false' policies/default.yaml \
+  || ! grep -Fq 'raw_logging: false' policies/demo.yaml \
+  || ! grep -Fq 'raw_logging: false' policies/strict.yaml; then
+  fail_check "security_configuration"
+fi
+pass_check "security_configuration"
+
+if [[ "$ALLOW_DIRTY" -eq 0 ]]; then
+  if [[ -n "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
+    fail_check "clean_worktree"
+  fi
+  pass_check "clean_worktree"
+else
+  printf '%s\n' 'release-check: step=clean_worktree status=skipped reason=allow_dirty'
+fi
+
+run_quiet "diff_unstaged" git diff --check
+run_quiet "diff_staged" git diff --cached --check
+run_quiet "format" cargo fmt --all -- --check
+run_quiet \
+  "clippy_strict" \
+  cargo clippy --locked --all-targets --all-features -- \
+  -D warnings \
+  -D clippy::dbg_macro \
+  -D clippy::expect_used \
+  -D clippy::panic \
+  -D clippy::todo \
+  -D clippy::unimplemented \
+  -D clippy::unwrap_used
+run_quiet "tests_all" cargo test --locked --all-targets --all-features
+run_quiet "binary_release" cargo build --locked --release --bin agentveil
+
+shopt -s nullglob
+policy_files=(policies/*.yaml)
+if [[ "${#policy_files[@]}" -eq 0 ]]; then
+  fail_check "policy_inventory"
+fi
+for policy_file in "${policy_files[@]}"; do
+  run_quiet "policy_validate" target/release/agentveil policy-validate "$policy_file"
+done
+
+run_quiet "leak_scan" scripts/verify-no-leak
+
+if command -v cargo-audit >/dev/null 2>&1; then
+  run_quiet "dependency_advisories" cargo audit --locked
+elif [[ "$ALLOW_MISSING_CARGO_AUDIT" -eq 1 ]]; then
+  printf '%s\n' 'release-check: step=dependency_advisories status=skipped reason=explicit_override'
+else
+  fail_check "dependency_advisories_tool_unavailable"
+fi
+
+printf 'release-check: status=pass steps=%s\n' "$STEP_COUNT"

@@ -1,16 +1,56 @@
 # Risk register
 
-| ID | Risk | Current control | Status |
-|---|---|---|---|
-| AV-001 | Unsupported Codex field carries model-visible sensitive text | Schema-aware allowlist; reject unknown text-bearing/integrity-bound shapes | Open until contract tests pass |
-| AV-002 | Local gateway becomes an authenticated OpenAI relay | Loopback binding, per-session local credential, fixed upstream and route allowlists | Implementation pending |
-| AV-003 | Audit, dashboard, report, or logs contain protected values | Typed value-free events plus synthetic canary scan | Implementation pending |
-| AV-004 | Restoration crosses sessions, survives TTL, or enters unsafe fields | Authenticated session scope, exact token lookup, bounded memory, display-text-only allowlist | Implementation pending |
-| AV-005 | Restored text is persisted in Codex local transcripts | No live restoration claim until transcript replay is tested; deterministic local display only | Open |
-| AV-006 | SSE/UTF-8 fragmentation corrupts or leaks tokens | Framing-aware parser and every-split tests | Implementation pending |
-| AV-007 | Detector/normalizer failure silently bypasses protection | Required detectors fail closed before any upstream body bytes | Implementation pending |
-| AV-008 | Donor runtime state is copied or exposed | New clean repo; broad ignore rules; donor state excluded | Controlled |
-| AV-009 | PromptFence ignored archives include secret-shaped local state and some permissive file modes | Values were not read; never copy; owner authorization required before permission remediation | Awaiting owner decision |
-| AV-010 | PromptGuard ignored `.env` is mode `0644` | File was not read; never copy; owner authorization required before permission remediation | Awaiting owner decision |
+Evidence anchor: commit `ed09354`. “Controlled” below means controlled only
+inside the exact client/transport/payload boundary in
+[PAYLOAD_MAP.md](PAYLOAD_MAP.md), not universally eliminated.
 
-No donor permission or content remediation is authorized by the AgentVeil build itself.
+## Product and implementation risks
+
+| ID | Risk and consequence | Current control / evidence | Status and next gate |
+|---|---|---|---|
+| AV-001 | A future/unsupported Codex field carries model-visible sensitive text. | Unknown top-level/item/content shapes reject; every string/key in an accepted payload is rewrite or block-only; duplicate keys reject. | **Controlled for anchor; recurring.** Any Codex/schema upgrade requires adapter, map, fake-wire, and live-proof refresh. |
+| AV-002 | The loopback gateway becomes an authenticated OpenAI relay. | Loopback-only bind, OS-random local capability, constant-time check, fixed routes/hosts, single-Bearer validation, explicit header/query allowlists, redirects and environment proxies disabled. | **Controlled for anchor.** Add negative route/header regression cases to release suite. |
+| AV-003 | Audit, dashboard, generated report, logs, or terminal output contains originals, mappings, auth, or tokens. | Closed typed audit schema; no body logging; audit unit/file/wire/live scans; dashboard consumes typed audit metadata and has local-asset/no-secret tests. | **Audit/dashboard controlled by construction; release surface open.** Browser/report canary scans remain gates. |
+| AV-004 | Restoration crosses sessions, outlives TTL, or enters unsafe fields. | Exact token, session scope, TTL/capacity, unknown-token block, display-field allowlist; unit/SSE tests. | **Controlled in synthetic mode.** Live restoration remains disabled. |
+| AV-005 | Restored originals persist in or replay from local Codex transcripts. | Gateway rejects restoration with OpenAI; live responses remain tokenized. | **Open research / safely disabled.** Do not enable live restoration until transcript lifecycle and replay are independently proven. |
+| AV-006 | An AgentVeil token is split across multiple semantic SSE delta events and fails restoration. | Every transport-byte split of a complete event is tested; unsafe events never restore. | **Open functionality limit.** No privacy regression while live restoration is disabled; semantic reassembly needs bounded state before expansion. |
+| AV-007 | Detector/normalizer/source-map failure silently bypasses protection. | Bounded composed transforms; invalid percent UTF-8/view limit/span/rewrite failures close; tests cover composed bypasses and invalid UTF-8. | **Controlled for tested failures.** Fuzz/property testing remains a release-hardening opportunity. |
+| AV-008 | Donor runtime state, captures, environments, or archives are copied into the public repository. | New clean implementation; ignored runtime patterns; donor attribution; policy forbids donor-state copying. | **Controlled in AgentVeil.** Release leak scan must include ignored/generated artifacts, not only tracked source. |
+| AV-011 | Raw tool output is displayed or persisted locally before AgentVeil protects the next model turn. | Tool-output field is protected at the Responses boundary; live synthetic replay verified. | **Accepted scope limit.** AgentVeil prevents supported OpenAI egress, not local terminal/transcript retention. |
+| AV-012 | LRU capacity evicts a still-live mapping, breaking later restoration or replay. | Bounded ledger, deterministic LRU, expiry purge; unowned token blocks outbound rather than passing. | **Open availability/usability risk.** Consider reject-on-capacity or request-lifetime pinning before live restoration. |
+| AV-013 | Hostile/interposed audit path exploits an unchecked intermediate path component. | Direct parent is forced to `0700` and checked non-symlink; final file uses `0600`, `O_NOFOLLOW`, and metadata verification. | **Open local-filesystem hardening.** Prefer a trusted absolute state directory; consider component-by-component/openat hardening. |
+| AV-014 | Relative audit path lands in an unexpected/shared current directory. | Repository runtime/audit patterns are Git-ignored; installer docs recommend an explicit private absolute path. | **Open operator risk.** Change packaged default to an OS state directory before production use. |
+| AV-015 | A malicious or substituted `codex` binary passes only the version-string check. | Launcher canonicalizes an executable outside the workspace and pins the resolved path; exact version/login required. | **Open supply-chain risk.** Signed/package-hash verification is absent at anchor. |
+| AV-016 | Exact Codex pin becomes stale, encouraging users to bypass AgentVeil after an update. | Other versions fail closed with an explicit error; docs forbid bypassing the pin. | **Accepted safety tradeoff.** Publish compatibility only after full evidence refresh. |
+| AV-017 | A privileged/same-user malicious process reads gateway memory, auth, or the local capability. | Capability is random, not in provider command-line config, and blanked for Codex-created shell tools. | **Out of threat scope.** Loopback capability is not a boundary against root/debugger/process-memory access. |
+| AV-018 | A Codex tool or MCP server exfiltrates data through its own network route. | No false claim; normal Codex sandbox/approval controls remain necessary. | **Out of product scope.** AgentVeil mediates Responses egress only. |
+| AV-019 | Detector false negative sends an unsupported secret form, or false positive blocks safe work. | High-specificity patterns, typed fields, strict structural blocking, bounded normalization, documented classes. | **Residual/open.** Expand only with synthetic fixtures, source-mapped tests, and zero-connect evidence. |
+| AV-020 | Large/concurrent requests or synchronous audit flush create local denial of service. | Body/SSE/view/ledger limits; serialized engine; errors fail closed. | **Open availability risk.** Benchmark and concurrency/resource tests were not present at anchor. |
+| AV-021 | Upstream response contains sensitive/model-generated content that AgentVeil does not inspect. | Live response is passed through; later supported outbound replay is scanned. | **Accepted scope limit.** AgentVeil is an outbound request boundary, not response DLP. |
+| AV-022 | Audit lifecycle is mistaken for delivery proof. | `pending`, `started`, and `failed` states are explicit and reuse an event ID; pre-send pending must flush. | **Documentation-controlled.** A started row does not prove model receipt/completion. |
+| AV-023 | Normal Codex operational headers expose account/project/session metadata despite body protection. | Only an explicit header allowlist is forwarded; cookies/local capability are stripped; values are not logged. | **Accepted functional requirement.** AgentVeil is not an identity anonymizer; minimize allowlist as Codex evidence permits. |
+| AV-024 | Direct `agentveil serve` setup leaks its manually managed environment credential or is misconfigured. | Launcher owns the supported lifecycle; serve validates token/scope, loopback, live/demo separation, and upstream URL. | **Open advanced-interface risk.** Documentation directs live users to `agentveil codex`. |
+| AV-025 | Pre-release dashboard/report/demo claims outrun the core evidence. | Status distinguishes the core anchor from the current dashboard; dashboard is labeled visibility, not wire proof. | **Pending release gate.** Refresh anchor and run value-free/leak/browser verification on final artifacts. |
+
+## External donor-workspace risks
+
+These observations concern separate local donor working copies, not files in the
+AgentVeil repository. Their contents were not read and must not be copied. The
+AgentVeil task does not authorize modifying those repositories.
+
+| ID | Observation | Current control | Status |
+|---|---|---|---|
+| AV-009 | PromptFence ignored runtime archives have secret-shaped names/content classification and some were observed with mode `0644`; its `.claude.env` was mode `0600`. No value was opened or copied. | Keep all ignored state out of AgentVeil; values remain uninspected. | **Awaiting owner authorization.** Permission/content remediation must occur in the donor workspace, not during AgentVeil build. |
+| AV-010 | PromptGuard ignored `.env` was observed with mode `0644`; untracked `PromptGuard.zip` must be preserved. The environment file was not read or copied. | Keep both outside AgentVeil; do not delete or inspect the archive/environment as part of this project. | **Awaiting owner authorization.** Restricting the donor `.env` requires explicit approval. |
+
+Until the owner authorizes donor remediation, release checks should verify only
+that no donor runtime state entered AgentVeil. They must not traverse, print,
+archive, upload, chmod, delete, or otherwise alter the donor files.
+
+## Release interpretation
+
+A risk marked controlled can reopen when any of these change: Codex version,
+model, provider configuration, Responses schema, detector/policy, upstream
+allowlist, audit/dashboard/report surface, restoration mode, or packaging. The
+release commit must rerun deterministic wire, leak, lint/test, and live synthetic
+proofs before moving the evidence anchor.

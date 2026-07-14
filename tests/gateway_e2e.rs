@@ -341,6 +341,61 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(fake_state.request_count.load(Ordering::SeqCst), 2);
 
+    let dashboard = client
+        .get(format!("http://{gateway_address}/dashboard"))
+        .send()
+        .await
+        .expect("dashboard should load from loopback");
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    let dashboard_headers = dashboard.headers().clone();
+    assert_eq!(
+        dashboard_headers
+            .get("x-content-type-options")
+            .and_then(|value| value.to_str().ok()),
+        Some("nosniff")
+    );
+    assert!(
+        dashboard_headers
+            .get("content-security-policy")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("default-src 'none'"))
+    );
+    let dashboard_body = dashboard.text().await.expect("dashboard should be text");
+    assert!(!dashboard_body.contains(EMAIL));
+    assert!(!dashboard_body.contains(PRIVATE_IP));
+    assert!(!dashboard_body.contains(LOCAL_TOKEN));
+
+    let dashboard_state = client
+        .get(format!("http://{gateway_address}/dashboard/state"))
+        .send()
+        .await
+        .expect("dashboard state should load from loopback");
+    assert_eq!(dashboard_state.status(), StatusCode::OK);
+    let dashboard_state = dashboard_state
+        .text()
+        .await
+        .expect("dashboard state should be text");
+    assert!(!dashboard_state.contains(EMAIL));
+    assert!(!dashboard_state.contains(PRIVATE_IP));
+    assert!(!dashboard_state.contains(LOCAL_TOKEN));
+    assert!(!dashboard_state.contains("[AV_"));
+    let dashboard_state: Value =
+        serde_json::from_str(&dashboard_state).expect("dashboard state should parse");
+    assert_eq!(dashboard_state["originals_forwarded"], 0);
+    assert_eq!(dashboard_state["binding"], "loopback");
+    assert_eq!(dashboard_state["transport"], "responses_sse");
+    let activity = dashboard_state["activity"]
+        .as_array()
+        .expect("dashboard activity should be an array");
+    let mut sequences = activity
+        .iter()
+        .filter_map(|event| event["request_sequence"].as_u64())
+        .collect::<Vec<_>>();
+    let activity_count = sequences.len();
+    sequences.sort_unstable();
+    sequences.dedup();
+    assert_eq!(sequences.len(), activity_count);
+
     let audit = std::fs::read_to_string(&audit_path).expect("audit should be readable");
     for forbidden in [
         EMAIL,

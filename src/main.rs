@@ -233,7 +233,7 @@ async fn launch_codex(
         .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true);
     println!(
-        "AgentVeil session active: session={display_session} transport=responses_sse binding={actual_bind} model={model}"
+        "AgentVeil session active: session={display_session} transport=responses_sse binding={actual_bind} model={model} dashboard=http://{actual_bind}/dashboard"
     );
     let mut child = codex.spawn().map_err(|_| CliError::CodexLaunch)?;
     let status = tokio::select! {

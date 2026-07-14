@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="AgentVeil local privacy boundary status">
+    <title>AgentVeil — Privacy boundary</title>
+    <link rel="stylesheet" href="/dashboard/app.css">
+    <script src="/dashboard/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to dashboard</a>
+    <header class="topbar">
+      <a class="brand" href="/dashboard" aria-label="AgentVeil dashboard home">
+        <svg aria-hidden="true" viewBox="0 0 32 32" width="28" height="28">
+          <path d="M16 2.5 27 7v8.2c0 7-4.7 11.9-11 14.3C9.7 27.1 5 22.2 5 15.2V7l11-4.5Z"></path>
+          <path d="m10.5 16 3.5 3.5 7.7-8"></path>
+        </svg>
+        <span>AgentVeil</span>
+      </a>
+      <div class="session-status" role="status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Protected session</span>
+        <span class="status-divider" aria-hidden="true"></span>
+        <span>Local only</span>
+      </div>
+    </header>
+
+    <div class="shell">
+      <nav class="sidebar" aria-label="Dashboard sections">
+        <p class="nav-label">Workspace</p>
+        <a class="nav-item active" href="#overview" aria-current="page">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"></path></svg>
+          Overview
+        </a>
+        <a class="nav-item" href="#activity">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 12h3l2-6 4 12 2-6h5"></path></svg>
+          Activity
+        </a>
+        <a class="nav-item" href="#verification">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+          Verification
+        </a>
+        <a class="nav-item" href="#policy">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h3"></path></svg>
+          Policy
+        </a>
+
+        <div class="sidebar-note">
+          <p>Bound to loopback</p>
+          <code>127.0.0.1</code>
+        </div>
+      </nav>
+
+      <main id="main">
+        <section class="intro" id="overview" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">Session boundary</p>
+            <h1 id="page-title">Privacy boundary</h1>
+            <p class="lede">Sensitive values are classified before a verified Codex Responses request can leave this machine.</p>
+          </div>
+          <div class="session-chip">
+            <span>Session</span>
+            <code id="session-id">connecting</code>
+          </div>
+        </section>
+
+        <section class="route-card" aria-labelledby="route-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Verified route</p>
+              <h2 id="route-title">Local Codex to GPT-5.6</h2>
+            </div>
+            <span class="live-pill"><span aria-hidden="true"></span>Active</span>
+          </div>
+          <div class="route-flow" aria-label="Local Codex routes through AgentVeil to GPT-5.6">
+            <div class="route-node">
+              <span class="node-index">01</span>
+              <strong>Local Codex</strong>
+              <small>Responses client</small>
+            </div>
+            <div class="route-line" aria-hidden="true"><span></span></div>
+            <div class="route-node veil-node">
+              <span class="node-index">02</span>
+              <strong>AgentVeil</strong>
+              <small>Classify · enforce · audit</small>
+            </div>
+            <div class="route-line" aria-hidden="true"><span></span></div>
+            <div class="route-node">
+              <span class="node-index">03</span>
+              <strong>GPT-5.6</strong>
+              <small>Protected context</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="metrics" aria-label="Privacy boundary metrics">
+          <article class="metric-card critical">
+            <p>Originals forwarded</p>
+            <strong id="original-count">0</strong>
+            <span>Protected findings stay local</span>
+          </article>
+          <article class="metric-card">
+            <p>Audit sink</p>
+            <strong id="audit-state">Checking</strong>
+            <span>Value-free metadata only</span>
+          </article>
+          <article class="metric-card">
+            <p>Transport</p>
+            <strong id="transport-state">Responses</strong>
+            <span>SSE streaming preserved</span>
+          </article>
+        </section>
+
+        <div class="content-grid">
+          <section class="activity-panel" id="activity" aria-labelledby="activity-title">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Safe metadata</p>
+                <h2 id="activity-title">Protection activity</h2>
+              </div>
+              <span class="request-count"><strong id="request-count">0</strong> requests</span>
+            </div>
+            <div id="activity-list" class="activity-list" aria-live="polite">
+              <div class="empty-state">
+                <span class="empty-mark" aria-hidden="true"></span>
+                <p>Waiting for a protected request.</p>
+                <small>No originals, token mappings, or payload fragments appear here.</small>
+              </div>
+            </div>
+          </section>
+
+          <aside class="verification-panel" id="verification" aria-labelledby="verification-title">
+            <p class="eyebrow">Boundary proof</p>
+            <h2 id="verification-title">Verification</h2>
+            <ul class="check-list">
+              <li>
+                <span class="check" aria-hidden="true">✓</span>
+                <div><strong>Zero-connect block</strong><small>Hard secrets stop before egress.</small></div>
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span>
+                <div><strong>Tool-result boundary</strong><small>Tool outputs are scanned on re-entry.</small></div>
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span>
+                <div><strong>Audit minimization</strong><small>Events contain classifications, never values.</small></div>
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span>
+                <div><strong>Fixed upstream</strong><small>Redirects and ambient proxies are disabled.</small></div>
+              </li>
+            </ul>
+
+            <div class="policy-card" id="policy">
+              <span>Active policy</span>
+              <strong id="policy-name">loading</strong>
+              <small>Fail-closed enforcement</small>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <footer>
+      <p><span class="status-dot" aria-hidden="true"></span> Loopback only · Live restoration is disabled</p>
+      <p>AgentVeil <span id="last-updated">awaiting state</span></p>
+    </footer>
+  </body>
+</html>

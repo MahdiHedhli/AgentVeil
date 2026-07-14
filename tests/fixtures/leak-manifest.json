@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "allow_tracked_matches": [
+    {
+      "rule_id": "secret.bearer_literal",
+      "sha256": "cbb5c7725195c696a3339fff2d6641447906f41a47fad82755a81e48d71dfaf3",
+      "paths": [
+        "tests/gateway_e2e.rs"
+      ]
+    }
+  ]
+}

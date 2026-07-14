@@ -13,9 +13,9 @@ These are mechanical release gates, not aspirations.
 9. Restoration accepts only an exact AgentVeil-issued token in the same live session and an approved assistant display-text event.
 10. Tokens are never restored into tool arguments, commands, URLs, headers, file writes, patches, IDs, errors, reasoning metadata, logs, audit, dashboard, or unknown events.
 11. Audit events contain typed metadata only: no body, finding value, context, token, mapping, auth header, cookie, query string, response text, or sensitive path.
-12. Gateway and dashboard bind to loopback and require an unguessable per-session local credential for protected and mutating routes.
+12. Gateway and dashboard bind to loopback. Protected Responses/model routes require an unguessable per-session local credential; the read-only dashboard exposes only value-free typed metadata and receives no browser-visible credential.
 13. Upstream destination, path, method, and forwarded headers are allowlisted; AgentVeil is not a generic authenticated relay.
 14. Synthetic canaries are absent from audit, dashboard state, generated reports, stdout/stderr, crash output, and fake-upstream evidence except explicitly approved in-memory fixture assertions.
 15. Protection labels are tied to tested Codex version, transport, route, and payload fields. IDE, cloud, WebSocket, image, binary, and opaque paths remain unsupported until independently verified.
 
-Current unit evidence covers invariants 1, 4, 5, 6, 7, 8, 9, and the value-free audit schema. Gateway, streaming, wire, and leak-scanning invariants remain release gates.
+The current 38-test suite covers the engine, policy, ledger, audit, dashboard assets, launcher boundary, Responses/SSE wire path, zero-connect blocking, tool-result re-entry, and value-free dashboard/audit state. The release script and leak scanner are implemented, but a clean final-commit run, browser verification, deterministic demo packaging, benchmark, and renewed live synthetic proof remain release gates.
