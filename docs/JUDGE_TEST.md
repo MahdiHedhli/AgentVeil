@@ -14,11 +14,11 @@ Codex CLI exactly `0.144.4`. The offline proof is the recommended judge path.
 
 ## Linux x86_64
 
-Candidate `v0.1.5` is the intended submission release. Run these commands only
+Candidate `v0.1.6` is the intended submission release. Run these commands only
 after that tag and its checksums are publicly available:
 
 ```sh
-tag=v0.1.5
+tag=v0.1.6
 asset="agentveil-${tag}-linux-x86_64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"
@@ -31,7 +31,7 @@ tar -xzf "$asset"
 ## macOS arm64
 
 ```sh
-tag=v0.1.5
+tag=v0.1.6
 asset="agentveil-${tag}-macos-arm64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"

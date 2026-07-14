@@ -72,11 +72,13 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("scripts/package-release", workflow)
+        self.assertIn("--component rustfmt", workflow)
+        self.assertIn("--component clippy", workflow)
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             binary = temporary / "agentveil-test-binary"
             binary.write_bytes(
-                b'#!/bin/sh\n[ "$1" = "--version" ] || exit 1\nprintf "agentveil 0.1.5\\n"\n'
+                b'#!/bin/sh\n[ "$1" = "--version" ] || exit 1\nprintf "agentveil 0.1.6\\n"\n'
             )
             binary.chmod(0o700)
             binary_alias = temporary / "agentveil-test-binary-alias"
@@ -91,7 +93,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
             ):
                 PACKAGE_RELEASE.sha256_regular(protected_source)
             output = temporary / "dist"
-            tag = "v0.1.5"
+            tag = "v0.1.6"
             platform = "macos-arm64"
             package = f"agentveil-{tag}-{platform}"
             archive = output / f"{package}.tar.gz"
@@ -243,7 +245,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
             bad_repository = temporary / "bad-repository"
             bad_repository.mkdir()
             (bad_repository / "Cargo.toml").write_text(
-                '[package]\nname = "agentveil"\nversion = "0.1.5"\n',
+                '[package]\nname = "agentveil"\nversion = "0.1.6"\n',
                 encoding="utf-8",
             )
             bad_fixture = bad_repository / "fixtures" / "demo" / "synthetic-context.txt"
@@ -270,7 +272,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
                 )
 
     def test_package_release_rejects_tag_and_binary_version_mismatches(self) -> None:
-        self.assertEqual(PACKAGE_RELEASE.cargo_package_version(), "0.1.5")
+        self.assertEqual(PACKAGE_RELEASE.cargo_package_version(), "0.1.6")
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             binary = temporary / "agentveil-test-binary"
@@ -292,7 +294,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
                 PACKAGE_RELEASE.PackageError, "^binary_version_mismatch$"
             ):
                 PACKAGE_RELEASE.package_release(
-                    tag="v0.1.5",
+                    tag="v0.1.6",
                     platform="macos-arm64",
                     binary=binary,
                     output_dir=binary_mismatch_output,
@@ -304,7 +306,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
                 [
                     str(PROJECT_ROOT / "scripts" / "package-release"),
                     "--tag",
-                    "v0.1.5",
+                    "v0.1.6",
                     "--platform",
                     "macos-arm64",
                     "--binary",
