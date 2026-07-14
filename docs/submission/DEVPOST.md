@@ -54,7 +54,8 @@ upstream request counter remains unchanged, outbound tokenization, tool-output
 inspection, value-free dashboard state, and audit-content assertions. The
 current Rust suite comprises 42 passing tests—37 library, 3 launcher, 1
 offline-demo CLI, and 1 gateway integration test—and passes strict Clippy. The
-final submission must bind these counts to the clean release report.
+current clean release report binds these counts to its exact commit; the gate
+must be repeated after any subsequent source change.
 
 ## How Codex was used meaningfully
 

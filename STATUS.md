@@ -1,9 +1,10 @@
 # AgentVeil status
 
-Core evidence was first anchored to commit `ed09354` on July 14, 2026. The
-current release candidate adds the offline demo, value-free loopback dashboard,
-hardened audit sink, benchmark, and stronger release evidence. The generated
-release report is the exact commit/clean-tree anchor.
+Core evidence was first anchored on July 14, 2026. The current release
+candidate adds the offline demo, value-free loopback dashboard, hardened audit
+sink, benchmark, and stronger release evidence. Generated release reports bind
+their results to the exact Git commit and clean-tree observations; they remain
+private, value-free local evidence rather than committed runtime state.
 
 ## Current state
 
@@ -12,12 +13,14 @@ loopback gateway, secure Codex launcher, deterministic wire proof, packaged
 offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
 tool-replay proof are working. Live restoration remains disabled. The read-only
 dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
-The final clean release proof, renewed live proof, video, and Devpost submission
-remain.
+The clean release/leak gate, default benchmark, renewed fake-upstream proof, and
+renewed live synthetic proof passed on the current candidate. Publishing the
+release artifacts, recording the video, running `/feedback`, and completing the
+Devpost submission remain.
 
 ## Claim matrix
 
-| Claim | State at `ed09354` | Evidence |
+| Claim | Current state | Evidence |
 |---|---|---|
 | Codex custom-provider route | Verified | Codex CLI `0.144.4`, `wire_api = "responses"`, HTTP SSE, GPT-5.6 Luna live route |
 | Secure launcher route pinning | Verified | exact client/model checks, randomized provider ID, ephemeral loopback port, routing-override tests |
@@ -59,24 +62,28 @@ fixtures. It verifies:
 
 ## Live proof boundary
 
-A manual synthetic run against this anchor used the secure launcher, Codex CLI
+A renewed synthetic run on July 14, 2026 used the secure launcher, Codex CLI
 `0.144.4`, and `gpt-5.6-luna`. A local tool read a fixture containing a synthetic
 email, private IP, and project label. The next model turn returned the expected
-route marker. The gateway audit contained typed findings for the tool output but
-contained none of the originals or AgentVeil tokens. The child shell observed
-the AgentVeil session environment variable as empty.
+route marker. The gateway audit contained two rewritten events and contained
+none of the originals or AgentVeil tokens. The child shell observed the
+AgentVeil session environment variable as empty.
 
 This proves one dated live path, not every Codex workflow or future CLI version.
 
 ## Remaining release work
 
-1. Run the automated release/leak check on a clean final commit and retain its
-   private, value-free machine-readable report. RustSec `cargo-audit 0.22.2` is
-   installed and the rehearsal dependency audit passes.
-2. Run the default benchmark on that same commit. Its measurements are complete
-   release-test process timings, not protected-request latency.
-3. Re-run the complete fake and live synthetic proof on the release commit.
-4. Capture the sub-three-minute video and complete the Devpost entry.
+1. Merge the reviewed candidate, tag it, and verify the public prebuilt archives
+   and SHA-256 files on the supported judge platforms. The archives are not
+   signed or notarized production packages.
+2. Run `/feedback` in the main Codex development task and disposition the
+   resulting feedback.
+3. Capture the public sub-three-minute YouTube video and complete the Devpost
+   entry.
+
+Any source change before tagging invalidates the current clean-tree evidence
+and requires the release/leak gate, default benchmark, and synthetic proofs to
+be repeated.
 
 The working milestone is July 17, 2026. The Devpost submission deadline is
 July 21, 2026 at 5:00 PM Pacific / 8:00 PM Eastern.
