@@ -15,10 +15,10 @@ credential classes, and masks or tokenizes configured lower-risk values.
 
 ## Evidence snapshot
 
-The core route claims were first anchored on July 14, 2026. Release `v0.1.4`
-includes the deterministic offline demo, value-free dashboard, hardened audit
-sink, benchmark harness, release evidence gates, and a self-contained judge
-archive with its synthetic live-route fixture.
+The core route claims were first anchored on July 14, 2026. Public release
+`v0.1.4` is the baseline judge artifact. Candidate `v0.1.5` adds a
+real-Codex, synthetic-loopback presentation path; its evidence must be rebound
+to the final clean commit before the next tag is published.
 
 - The secure launcher routes Codex CLI `0.144.4` and `gpt-5.6-luna` through an
   ephemeral loopback provider without changing persistent Codex configuration.
@@ -45,14 +45,33 @@ archive with its synthetic live-route fixture.
   requires the exact loopback authority on every dashboard request, uses local
   assets and restrictive browser headers, and exposes no browser credential.
   Its synthetic proof state is set only by the capturing demo harness.
-- Release `v0.1.4` passes 42 Rust tests: 37 library tests, 3 launcher tests, 1
-  offline-demo CLI test, and 1 gateway wire-level integration test. Three
-  focused Python regressions cover exact archive packaging, report-directory
-  failure handling, and descriptor cleanup.
+- The current checkout passes 51 Rust tests: 43 library tests, 3 binary CLI
+  tests, 2 demo CLI integration tests, and 3 gateway end-to-end tests. Four
+  focused Python regressions cover exact archive packaging, tag/binary version
+  mismatch rejection, report-directory failure handling, and descriptor
+  cleanup. These counts describe the working tree until a clean release report
+  binds them to a published tag.
 
 Live OpenAI response restoration is deliberately disabled. Exact-token
-restoration exists only for the loopback synthetic-test mode while local Codex
-transcript persistence remains unverified.
+restoration exists only for loopback synthetic-test modes. The lower-level
+synthetic harness can restore its supported typed display snapshots for
+deterministic testing. The interactive `codex-demo` is narrower: it uses the
+real pinned Codex CLI and restores only `response.output_text.delta`; done,
+item, completion, and response snapshot events remain tokenized on the wire.
+The Codex TUI keeps a resumable local thread in a private temporary
+`CODEX_HOME` while it runs. AgentVeil recursively deletes and verifies that
+isolated root on clean exit, but a forced kill or host crash can leave the
+synthetic prompt and display state behind. This mode is synthetic-only and
+keeps the model route loopback-only; it sends no model request to OpenAI. This
+is not a claim that the Codex process performs no other network activity.
+
+Automated release evidence remains value-free: `demo --check`, `codex-demo
+--check`, the dashboard, audit, and generated reports emit only pass/fail or
+typed metadata. The `codex-demo --check` form uses a synthetic client with
+Codex-compatible shapes; it does not launch Codex. The interactive `codex-demo`
+intentionally displays the exact documented synthetic email and private IPv4
+fixtures inside Codex to show the transparent local experience. Never
+substitute real PII or credentials.
 
 See [STATUS.md](STATUS.md) for the claim matrix and remaining submission work.
 
@@ -73,7 +92,10 @@ The same loopback listener serves `/dashboard`. Its read-only routes are
 deliberately unauthenticated so no gateway credential enters browser state; the
 JSON contains only typed, value-free status and activity metadata. Exact Host
 validation prevents a browser from reaching those routes through another
-authority.
+authority. Dashboard state schema v2 adds the `client` discriminator and the
+new restoration/wire-proof labels. Consumers must gate interpretation on
+`schema_version`, tolerate future unknown fields and labels, and never infer
+egress proof from the client or restoration label.
 
 The launcher pins the verified Codex executable, model, wire format, and
 provider configuration. It rejects passthrough options that could change model
@@ -92,7 +114,18 @@ agentveil demo
 
 The second command prints a loopback dashboard URL and remains active until
 Ctrl-C. It uses only embedded synthetic fixtures and a capturing loopback fake
-upstream. For the separately scoped live route:
+upstream. To demonstrate a transparent round trip through the real Codex TUI,
+without Codex login and with its model route kept loopback-only, run:
+
+```sh
+agentveil codex-demo
+```
+
+This command creates a private temporary Codex home and synthetic-only
+workspace. The interactive TUI writes resumable state there while it runs,
+then AgentVeil verifies recursive removal on clean exit. Abnormal termination
+can leave synthetic temporary state, so never substitute real personal data.
+For the separately scoped live route:
 
 ```sh
 agentveil doctor

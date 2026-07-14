@@ -1,10 +1,11 @@
 # AgentVeil status
 
-Core evidence was first anchored on July 14, 2026. Release `v0.1.4` includes
-the offline demo, value-free loopback dashboard, hardened audit sink, benchmark,
-release evidence, and the synthetic fixture required by its standalone judge
-archive. Generated release reports bind their results to the exact Git commit
-and clean-tree observations.
+Core evidence was first anchored on July 14, 2026. Public release `v0.1.4` is
+the baseline judge artifact. Candidate `v0.1.5` adds the real-Codex
+synthetic-loopback demonstration and its narrower delta-only restoration path.
+Generated release reports bind results to an exact Git commit and clean-tree
+observations; the working-tree claims below require a fresh report before the
+next tag.
 
 ## Current state
 
@@ -13,10 +14,10 @@ loopback gateway, secure Codex launcher, deterministic wire proof, packaged
 offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
 tool-replay proof are working. Live restoration remains disabled. The read-only
 dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
-The clean release/leak gate, default benchmark, renewed fake-upstream proof, and
-renewed live synthetic proof passed for release `v0.1.4`. Its prebuilt Ubuntu
-x86_64 and macOS arm64 archives are checksum-verified. Final video review and
-upload, running `/feedback`, and completing the Devpost submission remain.
+The current candidate's automated checks are value-free; its interactive
+`codex-demo` intentionally shows only the documented synthetic email and
+private IPv4 fixtures inside an isolated Codex TUI. Final clean release gates,
+the replacement video, and completing the Devpost submission remain.
 
 ## Claim matrix
 
@@ -30,33 +31,37 @@ upload, running `/feedback`, and completing the Devpost submission remain.
 | Tool-result protection before next model turn | Verified | fake-upstream function-output assertion and live synthetic custom-tool-output replay |
 | Value-free audit schema and persistence gate | Verified for current audit path | typed audit tests, file-mode tests, fake-upstream leak assertions, live synthetic audit scan |
 | Session/TTL/capacity token scope | Verified in unit tests | exact lookup, cross-scope denial, expiry, LRU, clear, hard-secret denial |
-| Synthetic SSE display restoration | Verified in tests | every transport split, unsupported sink preservation, malformed/truncated rejection |
+| Full synthetic-harness display restoration | Verified in tests | supported typed display snapshots, every transport split, unsupported sink preservation, malformed/truncated rejection |
+| Codex synthetic delta-only restoration | Verified in tests and interactive smoke | only `response.output_text.delta` is restored; done/item/completion/response snapshots stay tokenized; exact-token replay remains session/TTL scoped |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Verified in release `v0.1.4` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
-| Packaged offline demo | Verified in release `v0.1.4` | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Dashboard | Verified in candidate `v0.1.5` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; state schema v2 adds client plus expanded restoration/wire-proof labels; synthetic proof state only in a capturing harness |
+| Packaged offline demo | Verified in candidate `v0.1.5`; release binding pending | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Interactive real-Codex synthetic demo | Verified in candidate `v0.1.5`; release binding pending | real pinned TUI, model route loopback-only, no model request to OpenAI; TUI state is resumable while running, deleted and verified absent on clean exit, with forced-kill/crash residue explicitly disclosed |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result
 
-`cargo test --locked` on the current build passed:
+`cargo test --locked --all-targets` on the current build passed:
 
 ```text
-37 library tests passed
-3 CLI tests passed
-1 offline-demo CLI test passed
-1 gateway integration test passed
-42 total; 0 failed
+43 library tests passed
+3 binary CLI tests passed
+2 demo CLI integration tests passed
+3 gateway end-to-end tests passed
+51 total; 0 failed
 ```
 
-Three focused Python regression tests cover exact archive construction and
-inspection, release-report directory error classification, and descriptor
-cleanup on benchmark validation failures.
+Four focused Python regression tests cover exact archive construction and
+inspection, tag/binary version mismatch rejection, release-report directory
+error classification, and descriptor cleanup on benchmark validation failures.
 
 The gateway integration test uses only loopback listeners and synthetic
 fixtures. It verifies:
 
 - raw synthetic email and private IPv4 values are absent at the fake upstream;
-- the local synthetic restoration response returns the exact originals;
+- the full synthetic-harness response restores supported typed display copies;
+- the Codex-compatible path restores only live output-text deltas and keeps
+  structured completion/history snapshots tokenized;
 - direct, encoded, composed, adjacent, structural-key, metadata, and partial
   private-key bypass candidates do not increase the upstream request count;
 - invalid percent-encoded UTF-8 fails closed;
@@ -84,10 +89,11 @@ This proves one dated live path, not every Codex workflow or future CLI version.
 
 ## Remaining submission work
 
-1. Run `/feedback` in the main Codex development task and disposition the
-   resulting feedback.
-2. Capture the public sub-three-minute YouTube video and complete the Devpost
-   entry.
+1. Run the final clean release/leak, benchmark, Python, and synthetic proof
+   gates and bind them to the release commit.
+2. Capture and approve the public sub-three-minute killer-demo video, verify it
+   signed out, and complete the Devpost entry without enabling live
+   restoration.
 
 Any subsequent release source change invalidates the prior clean-tree evidence
 and requires the release/leak gate, default benchmark, and synthetic proofs to

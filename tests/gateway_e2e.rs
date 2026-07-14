@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use agentveil::gateway::{GatewayConfig, SyntheticWireProof, UpstreamMode, build_router};
+use agentveil::gateway::{
+    GatewayClient, GatewayConfig, RestorationMode, SyntheticWireProof, UpstreamMode, build_router,
+};
 use agentveil::ledger::SessionScope;
 use agentveil::policy::ValidatedPolicy;
 use axum::Router;
@@ -55,22 +57,123 @@ async fn fake_responses(
     state.bodies.lock().await.push(body.to_vec());
     let parsed: Value = serde_json::from_slice(&body).expect("gateway body should parse");
     let echo = first_model_text(&parsed).unwrap_or_else(|| "SAFE_EMPTY".to_string());
-    let data = json!({
-        "type": "response.output_text.delta",
-        "sequence_number": 1,
-        "item_id": "msg_synthetic",
-        "output_index": 0,
-        "content_index": 0,
-        "delta": echo
-    });
     (
         StatusCode::OK,
         [("content-type", "text/event-stream; charset=utf-8")],
-        format!(
-            "event: response.output_text.delta\ndata: {}\n\n",
-            serde_json::to_string(&data).expect("fake event should serialize")
-        ),
+        complete_sse(&echo),
     )
+}
+
+fn sse_event(value: Value) -> String {
+    let event_type = value["type"]
+        .as_str()
+        .expect("fake event type should be a string");
+    format!(
+        "event: {event_type}\ndata: {}\n\n",
+        serde_json::to_string(&value).expect("fake event should serialize")
+    )
+}
+
+fn complete_sse(text: &str) -> String {
+    let message_in_progress = json!({
+        "id": "msg_synthetic",
+        "type": "message",
+        "status": "in_progress",
+        "role": "assistant",
+        "content": []
+    });
+    let content_in_progress = json!({
+        "type": "output_text",
+        "annotations": [],
+        "logprobs": [],
+        "text": ""
+    });
+    let content_done = json!({
+        "type": "output_text",
+        "annotations": [],
+        "logprobs": [],
+        "text": text
+    });
+    let message_done = json!({
+        "id": "msg_synthetic",
+        "type": "message",
+        "status": "completed",
+        "role": "assistant",
+        "content": [content_done.clone()]
+    });
+    [
+        json!({
+            "type": "response.created",
+            "sequence_number": 0,
+            "response": {"id": "resp_synthetic", "output": []}
+        }),
+        json!({
+            "type": "response.in_progress",
+            "sequence_number": 1,
+            "response": {"id": "resp_synthetic", "output": []}
+        }),
+        json!({
+            "type": "response.output_item.added",
+            "sequence_number": 2,
+            "output_index": 0,
+            "item": message_in_progress
+        }),
+        json!({
+            "type": "response.content_part.added",
+            "sequence_number": 3,
+            "item_id": "msg_synthetic",
+            "output_index": 0,
+            "content_index": 0,
+            "part": content_in_progress
+        }),
+        json!({
+            "type": "response.output_text.delta",
+            "sequence_number": 4,
+            "item_id": "msg_synthetic",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": text,
+            "logprobs": []
+        }),
+        json!({
+            "type": "response.output_text.done",
+            "sequence_number": 5,
+            "item_id": "msg_synthetic",
+            "output_index": 0,
+            "content_index": 0,
+            "text": text,
+            "logprobs": []
+        }),
+        json!({
+            "type": "response.content_part.done",
+            "sequence_number": 6,
+            "item_id": "msg_synthetic",
+            "output_index": 0,
+            "content_index": 0,
+            "part": content_done
+        }),
+        json!({
+            "type": "response.output_item.done",
+            "sequence_number": 7,
+            "output_index": 0,
+            "item": message_done.clone()
+        }),
+        json!({
+            "type": "response.completed",
+            "sequence_number": 8,
+            "response": {"id": "resp_synthetic", "output": [message_done]}
+        }),
+    ]
+    .into_iter()
+    .map(sse_event)
+    .collect()
+}
+
+fn parse_sse_events(body: &str) -> Vec<Value> {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|data| serde_json::from_str(data).expect("SSE data should parse"))
+        .collect()
 }
 
 fn first_model_text(value: &Value) -> Option<String> {
@@ -114,6 +217,36 @@ fn codex_request(text: &str, tool_output: bool) -> Value {
         "model": "gpt-5.6-luna",
         "instructions": "Use the protected references.",
         "input": input,
+        "tools": [],
+        "tool_choice": "auto",
+        "parallel_tool_calls": true,
+        "reasoning": {"effort": "medium"},
+        "store": false,
+        "stream": true,
+        "include": [],
+        "client_metadata": {
+            "session_id": "synthetic-session",
+            "thread_id": "synthetic-thread"
+        }
+    })
+}
+
+fn codex_replay_request(tokenized_assistant_text: &str) -> Value {
+    json!({
+        "model": "gpt-5.6-luna",
+        "instructions": "Use the protected references.",
+        "input": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": tokenized_assistant_text}]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "Repeat the synthetic configuration exactly."}]
+            }
+        ],
         "tools": [],
         "tool_choice": "auto",
         "parallel_tool_calls": true,
@@ -190,7 +323,8 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
         local_session_token: Zeroizing::new(LOCAL_TOKEN.to_string()),
         audit_path: audit_path.clone(),
         upstream: UpstreamMode::loopback_test(fake_url).expect("test upstream should validate"),
-        restore_display_text: true,
+        client: GatewayClient::Generic,
+        restoration_mode: RestorationMode::SyntheticDisplayText,
         synthetic_wire_proof: SyntheticWireProof::unmeasured(),
     })
     .expect("gateway should build");
@@ -410,9 +544,12 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     assert!(!dashboard_state.contains("[AV_"));
     let dashboard_state: Value =
         serde_json::from_str(&dashboard_state).expect("dashboard state should parse");
+    assert_eq!(dashboard_state["schema_version"], 2);
     assert_eq!(dashboard_state["wire_proof"], "not_measured");
     assert_eq!(dashboard_state["binding"], "loopback");
     assert_eq!(dashboard_state["transport"], "responses_sse");
+    assert_eq!(dashboard_state["client"], "generic");
+    assert_eq!(dashboard_state["restoration"], "synthetic_full");
     let activity = dashboard_state["activity"]
         .as_array()
         .expect("dashboard activity should be an array");
@@ -453,5 +590,179 @@ async fn wire_proof_tokenizes_blocks_restores_and_keeps_audit_value_free() {
     fake_task.await.expect("fake task should join");
     if let Some(parent) = audit_path.parent() {
         let _ = std::fs::remove_dir_all(parent);
+    }
+}
+
+#[tokio::test]
+async fn delta_only_restores_live_display_but_keeps_completed_items_tokenized() {
+    let fake_state = Arc::new(FakeState::default());
+    let fake_app = Router::new()
+        .route("/v1/responses", post(fake_responses))
+        .with_state(fake_state.clone());
+    let (fake_address, fake_shutdown, fake_task) = spawn(fake_app).await;
+
+    let gateway_listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("gateway port should reserve");
+    let gateway_address = gateway_listener
+        .local_addr()
+        .expect("gateway should have address");
+    let fake_url =
+        Url::parse(&format!("http://{fake_address}")).expect("fake upstream URL should parse");
+    let audit_path = temporary_audit_path();
+    let policy = ValidatedPolicy::from_yaml(include_bytes!("../policies/demo.yaml"))
+        .expect("demo policy should validate");
+    let gateway_app = build_router(GatewayConfig {
+        bind: gateway_address,
+        policy,
+        scope: SessionScope::parse("scope_delta_123456").expect("scope should validate"),
+        local_session_token: Zeroizing::new(LOCAL_TOKEN.to_string()),
+        audit_path: audit_path.clone(),
+        upstream: UpstreamMode::loopback_test(fake_url).expect("test upstream should validate"),
+        client: GatewayClient::Generic,
+        restoration_mode: RestorationMode::SyntheticDisplayDeltaOnly,
+        synthetic_wire_proof: SyntheticWireProof::unmeasured(),
+    })
+    .expect("gateway should build");
+    let (gateway_address, gateway_shutdown, gateway_task) =
+        spawn_on(gateway_listener, gateway_app).await;
+    let client = reqwest::Client::new();
+    let raw = format!("Contact {EMAIL} on {PRIVATE_IP}");
+
+    let response = client
+        .post(format!("http://{gateway_address}/v1/responses"))
+        .header("x-agentveil-session", LOCAL_TOKEN)
+        .json(&codex_request(&raw, false))
+        .send()
+        .await
+        .expect("protected request should complete");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("SSE should read");
+    let events = parse_sse_events(&body);
+    let event = |event_type: &str| {
+        events
+            .iter()
+            .find(|event| event["type"] == event_type)
+            .expect("expected event should exist")
+    };
+
+    let delta = event("response.output_text.delta")["delta"]
+        .as_str()
+        .expect("delta should be text");
+    assert!(delta.contains(EMAIL));
+    assert!(delta.contains(PRIVATE_IP));
+    assert!(!delta.contains("[AV_"));
+
+    let done = event("response.output_text.done")["text"]
+        .as_str()
+        .expect("completed text should be text");
+    assert!(!done.contains(EMAIL));
+    assert!(!done.contains(PRIVATE_IP));
+    assert!(done.contains("[AV_EMAIL_"));
+    assert!(done.contains("[AV_IPV4_"));
+
+    let item_done = &event("response.output_item.done")["item"]["content"][0]["text"];
+    let item_done = item_done
+        .as_str()
+        .expect("completed item text should be text");
+    assert_eq!(item_done, done);
+    let response_done = &event("response.completed")["response"]["output"][0]["content"][0]["text"];
+    assert_eq!(response_done.as_str(), Some(done));
+
+    let captured = fake_state.bodies.lock().await[0].clone();
+    let captured = String::from_utf8(captured).expect("captured body should be UTF-8");
+    assert!(!captured.contains(EMAIL));
+    assert!(!captured.contains(PRIVATE_IP));
+    assert!(captured.contains("[AV_EMAIL_"));
+    assert!(captured.contains("[AV_IPV4_"));
+
+    let replay_response = client
+        .post(format!("http://{gateway_address}/v1/responses"))
+        .header("x-agentveil-session", LOCAL_TOKEN)
+        .json(&codex_replay_request(done))
+        .send()
+        .await
+        .expect("owned-token replay should complete");
+    assert_eq!(replay_response.status(), StatusCode::OK);
+    let replay_body = replay_response
+        .text()
+        .await
+        .expect("replay SSE should read");
+    let replay_events = parse_sse_events(&replay_body);
+    let replay_event = |event_type: &str| {
+        replay_events
+            .iter()
+            .find(|event| event["type"] == event_type)
+            .expect("expected replay event should exist")
+    };
+    let replay_delta = replay_event("response.output_text.delta")["delta"]
+        .as_str()
+        .expect("replay delta should be text");
+    assert!(replay_delta.contains(EMAIL));
+    assert!(replay_delta.contains(PRIVATE_IP));
+    assert!(!replay_delta.contains("[AV_"));
+    let replay_done = replay_event("response.output_item.done")["item"]["content"][0]["text"]
+        .as_str()
+        .expect("replay completion should be text");
+    assert_eq!(replay_done, done);
+
+    let captured_replay = fake_state.bodies.lock().await[1].clone();
+    let captured_replay =
+        String::from_utf8(captured_replay).expect("captured replay should be UTF-8");
+    assert!(!captured_replay.contains(EMAIL));
+    assert!(!captured_replay.contains(PRIVATE_IP));
+    assert!(captured_replay.contains(done));
+
+    let dashboard_state = client
+        .get(format!("http://{gateway_address}/dashboard/state"))
+        .send()
+        .await
+        .expect("dashboard state should load");
+    let dashboard_state: Value = dashboard_state
+        .json()
+        .await
+        .expect("dashboard state should parse");
+    assert_eq!(
+        dashboard_state["restoration"],
+        "synthetic_display_delta_only"
+    );
+    assert_eq!(dashboard_state["client"], "generic");
+    let serialized_dashboard =
+        serde_json::to_string(&dashboard_state).expect("dashboard state should serialize");
+    assert!(!serialized_dashboard.contains(EMAIL));
+    assert!(!serialized_dashboard.contains(PRIVATE_IP));
+    assert!(!serialized_dashboard.contains("[AV_"));
+
+    let _ = gateway_shutdown.send(());
+    let _ = fake_shutdown.send(());
+    gateway_task.await.expect("gateway task should join");
+    fake_task.await.expect("fake task should join");
+    if let Some(parent) = audit_path.parent() {
+        let _ = std::fs::remove_dir_all(parent);
+    }
+}
+
+#[test]
+fn every_synthetic_restoration_mode_is_rejected_for_live_openai() {
+    for restoration_mode in [
+        RestorationMode::SyntheticDisplayText,
+        RestorationMode::SyntheticDisplayDeltaOnly,
+    ] {
+        let result = build_router(GatewayConfig {
+            bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 48741)),
+            policy: ValidatedPolicy::from_yaml(include_bytes!("../policies/default.yaml"))
+                .expect("default policy should validate"),
+            scope: SessionScope::parse("scope_live_123456").expect("scope should validate"),
+            local_session_token: Zeroizing::new(LOCAL_TOKEN.to_string()),
+            audit_path: temporary_audit_path(),
+            upstream: UpstreamMode::openai(),
+            client: GatewayClient::Generic,
+            restoration_mode,
+            synthetic_wire_proof: SyntheticWireProof::unmeasured(),
+        });
+        assert!(matches!(
+            result,
+            Err(agentveil::gateway::GatewayError::LiveRestorationNotVerified)
+        ));
     }
 }

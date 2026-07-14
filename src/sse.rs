@@ -4,12 +4,31 @@ use thiserror::Error;
 
 const MAX_SSE_EVENT_BYTES: usize = 1024 * 1024;
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SseRestorationMode {
+    SyntheticDisplayText,
+    SyntheticDisplayDeltaOnly,
+}
+
 pub struct SseTransformer {
     buffer: Vec<u8>,
+    restoration_mode: SseRestorationMode,
+}
+
+impl Default for SseTransformer {
+    fn default() -> Self {
+        Self::new(SseRestorationMode::SyntheticDisplayText)
+    }
 }
 
 impl SseTransformer {
+    pub fn new(restoration_mode: SseRestorationMode) -> Self {
+        Self {
+            buffer: Vec::new(),
+            restoration_mode,
+        }
+    }
+
     pub fn push<F>(&mut self, chunk: &[u8], mut restore: F) -> Result<Vec<Bytes>, SseError>
     where
         F: FnMut(&str) -> String,
@@ -21,7 +40,11 @@ impl SseTransformer {
         let mut frames = Vec::new();
         while let Some(end) = find_frame_end(&self.buffer) {
             let frame: Vec<u8> = self.buffer.drain(..end).collect();
-            frames.push(Bytes::from(transform_frame(&frame, &mut restore)?));
+            frames.push(Bytes::from(transform_frame(
+                &frame,
+                self.restoration_mode,
+                &mut restore,
+            )?));
         }
         Ok(frames)
     }
@@ -47,7 +70,11 @@ fn find_frame_end(bytes: &[u8]) -> Option<usize> {
     None
 }
 
-fn transform_frame<F>(frame: &[u8], restore: &mut F) -> Result<Vec<u8>, SseError>
+fn transform_frame<F>(
+    frame: &[u8],
+    restoration_mode: SseRestorationMode,
+    restore: &mut F,
+) -> Result<Vec<u8>, SseError>
 where
     F: FnMut(&str) -> String,
 {
@@ -89,7 +116,7 @@ where
     if event_type_header.is_some_and(|header| header != event_type) {
         return Err(SseError::MismatchedEventType);
     }
-    if !is_restorable_event(&event_type) {
+    if !is_restorable_event(restoration_mode, &event_type) {
         return Ok(frame.to_vec());
     }
     restore_event(&event_type, &mut event, restore)?;
@@ -103,19 +130,22 @@ where
     Ok(output)
 }
 
-fn is_restorable_event(event_type: &str) -> bool {
-    matches!(
-        event_type,
-        "response.output_text.delta"
-            | "response.output_text.done"
-            | "response.content_part.added"
-            | "response.content_part.done"
-            | "response.output_item.added"
-            | "response.output_item.done"
-            | "response.created"
-            | "response.in_progress"
-            | "response.completed"
-    )
+fn is_restorable_event(restoration_mode: SseRestorationMode, event_type: &str) -> bool {
+    match restoration_mode {
+        SseRestorationMode::SyntheticDisplayDeltaOnly => event_type == "response.output_text.delta",
+        SseRestorationMode::SyntheticDisplayText => matches!(
+            event_type,
+            "response.output_text.delta"
+                | "response.output_text.done"
+                | "response.content_part.added"
+                | "response.content_part.done"
+                | "response.output_item.added"
+                | "response.output_item.done"
+                | "response.created"
+                | "response.in_progress"
+                | "response.completed"
+        ),
+    }
 }
 
 fn restore_event<F>(event_type: &str, event: &mut Value, restore: &mut F) -> Result<(), SseError>
@@ -243,6 +273,27 @@ mod tests {
         .into_bytes()
     }
 
+    fn typed_event(event_type: &str, event: Value) -> String {
+        format!(
+            "event: {event_type}\ndata: {}\n\n",
+            serde_json::to_string(&event).expect("fixture should serialize")
+        )
+    }
+
+    fn event_values(frames: &[Bytes]) -> Vec<Value> {
+        frames
+            .iter()
+            .map(|frame| {
+                let frame = std::str::from_utf8(frame).expect("frame should be UTF-8");
+                let data = frame
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .expect("frame should contain data");
+                serde_json::from_str(data).expect("event data should parse")
+            })
+            .collect()
+    }
+
     #[test]
     fn restores_text_across_every_transport_split() {
         let source = event(&format!("pré🙂 {TOKEN} 終"));
@@ -277,6 +328,99 @@ mod tests {
             .expect("event should pass");
         let text = String::from_utf8(output[0].to_vec()).expect("output should be UTF-8");
         assert_eq!(text, frame);
+    }
+
+    #[test]
+    fn delta_only_mode_keeps_completed_history_items_tokenized() {
+        let message = serde_json::json!({
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": TOKEN}]
+        });
+        let source = [
+            typed_event(
+                "response.output_text.delta",
+                serde_json::json!({
+                    "type": "response.output_text.delta",
+                    "sequence_number": 1,
+                    "delta": TOKEN
+                }),
+            ),
+            typed_event(
+                "response.output_text.done",
+                serde_json::json!({
+                    "type": "response.output_text.done",
+                    "sequence_number": 2,
+                    "text": TOKEN
+                }),
+            ),
+            typed_event(
+                "response.content_part.done",
+                serde_json::json!({
+                    "type": "response.content_part.done",
+                    "sequence_number": 3,
+                    "part": {"type": "output_text", "text": TOKEN}
+                }),
+            ),
+            typed_event(
+                "response.output_item.done",
+                serde_json::json!({
+                    "type": "response.output_item.done",
+                    "sequence_number": 4,
+                    "item": message.clone()
+                }),
+            ),
+            typed_event(
+                "response.completed",
+                serde_json::json!({
+                    "type": "response.completed",
+                    "sequence_number": 5,
+                    "response": {"output": [message]}
+                }),
+            ),
+        ]
+        .concat();
+        let mut transformer = SseTransformer::new(SseRestorationMode::SyntheticDisplayDeltaOnly);
+        let frames = transformer
+            .push(source.as_bytes(), |text| {
+                text.replace(TOKEN, "ava@example.test")
+            })
+            .expect("events should transform");
+        transformer.finish().expect("stream should finish");
+        let events = event_values(&frames);
+
+        assert_eq!(events[0]["delta"], "ava@example.test");
+        assert_eq!(events[1]["text"], TOKEN);
+        assert_eq!(events[2]["part"]["text"], TOKEN);
+        assert_eq!(events[3]["item"]["content"][0]["text"], TOKEN);
+        assert_eq!(
+            events[4]["response"]["output"][0]["content"][0]["text"],
+            TOKEN
+        );
+    }
+
+    #[test]
+    fn full_synthetic_mode_preserves_existing_snapshot_restoration() {
+        let source = typed_event(
+            "response.output_item.done",
+            serde_json::json!({
+                "type": "response.output_item.done",
+                "sequence_number": 1,
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": TOKEN}]
+                }
+            }),
+        );
+        let mut transformer = SseTransformer::new(SseRestorationMode::SyntheticDisplayText);
+        let frames = transformer
+            .push(source.as_bytes(), |text| {
+                text.replace(TOKEN, "ava@example.test")
+            })
+            .expect("event should transform");
+        let events = event_values(&frames);
+        assert_eq!(events[0]["item"]["content"][0]["text"], "ava@example.test");
     }
 
     #[test]

@@ -12,7 +12,7 @@ Codex CLI 0.144.4
   -> inspected OpenAI Responses request
   -> allowlisted OpenAI upstream
   -> Responses SSE
-  -> supported local display restoration
+  -> live stream passed through without restoration
   -> Codex CLI
 ```
 
@@ -45,7 +45,14 @@ Default policy uses S0 for credentials and private keys, S1 for private IP/inter
 
 ## Deliberate pushback
 
-Restoring a value into text consumed by Codex may cause the local Codex transcript to persist and replay the original. Until transcript behavior is verified, real-Codex restoration is not a positive claim. The deterministic harness may restore a known synthetic value to an AgentVeil-local display sink; live Codex may remain tokenized. Outbound rescanning protects future remote egress but does not erase a local transcript.
+Restoring a value into text consumed by Codex can cause the local Codex thread
+to persist and replay the original. Live OpenAI restoration is therefore not a
+positive claim and remains disabled. The real-Codex synthetic demo routes only
+to a capturing loopback fixture and restores `response.output_text.delta`
+inside an isolated temporary home; snapshots remain tokenized. That TUI is
+resumable while running, AgentVeil verifies deletion on clean exit, and forced
+termination can leave synthetic residue. Outbound rescanning protects future
+remote egress but does not erase local state.
 
 ## Explicit Friday non-goals
 

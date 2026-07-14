@@ -28,25 +28,46 @@ if ! "$DEMO_BINARY" --help 2>/dev/null \
   printf '%s\n' 'demo-check: status=fail reason=demo_command_not_built' >&2
   exit 1
 fi
+if ! "$DEMO_BINARY" --help 2>/dev/null \
+  | grep -Eq '^[[:space:]]+codex-demo([[:space:]]|$)'; then
+  printf '%s\n' 'demo-check: status=fail reason=codex_demo_command_not_built' >&2
+  exit 1
+fi
 
-EXPECTED_OUTPUT='demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free'
-DEMO_CAPTURE="$(mktemp "${TMPDIR:-/tmp}/agentveil-demo-check.XXXXXX" 2>/dev/null)" || {
+OFFLINE_EXPECTED='demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free'
+CODEX_COMPATIBLE_EXPECTED='codex-demo-check: status=pass route=synthetic_client_codex_compatible block=pass tokenize=pass restore_delta=pass replay=pass wire_proof=pass audit=pass output=value_free'
+OFFLINE_CAPTURE="$(mktemp "${TMPDIR:-/tmp}/agentveil-demo-check.XXXXXX" 2>/dev/null)" || {
   printf '%s\n' 'demo-check: status=fail step=evidence_create output=suppressed' >&2
   exit 1
 }
-trap 'rm -f -- "$DEMO_CAPTURE" >/dev/null 2>&1 || :' EXIT
-if ! chmod 600 "$DEMO_CAPTURE" >/dev/null 2>&1; then
+CODEX_COMPATIBLE_CAPTURE="$(mktemp "${TMPDIR:-/tmp}/agentveil-codex-compatible-check.XXXXXX" 2>/dev/null)" || {
+  rm -f -- "$OFFLINE_CAPTURE" >/dev/null 2>&1 || :
+  printf '%s\n' 'demo-check: status=fail step=evidence_create output=suppressed' >&2
+  exit 1
+}
+trap 'rm -f -- "$OFFLINE_CAPTURE" "$CODEX_COMPATIBLE_CAPTURE" >/dev/null 2>&1 || :' EXIT
+if ! chmod 600 "$OFFLINE_CAPTURE" "$CODEX_COMPATIBLE_CAPTURE" >/dev/null 2>&1; then
   printf '%s\n' 'demo-check: status=fail step=evidence_permissions output=suppressed' >&2
   exit 1
 fi
 
 if env -i \
   TMPDIR="${TMPDIR:-/tmp}" \
-  "$DEMO_BINARY" demo --check >"$DEMO_CAPTURE" 2>&1 \
-  && printf '%s\n' "$EXPECTED_OUTPUT" | cmp -s - "$DEMO_CAPTURE"; then
-  printf '%s\n' "$EXPECTED_OUTPUT"
+  "$DEMO_BINARY" demo --check >"$OFFLINE_CAPTURE" 2>&1 \
+  && printf '%s\n' "$OFFLINE_EXPECTED" | cmp -s - "$OFFLINE_CAPTURE"; then
+  :
+else
+  printf '%s\n' 'demo-check: status=fail step=offline_rehearsal output=suppressed' >&2
+  exit 1
+fi
+
+if env -i \
+  TMPDIR="${TMPDIR:-/tmp}" \
+  "$DEMO_BINARY" codex-demo --check >"$CODEX_COMPATIBLE_CAPTURE" 2>&1 \
+  && printf '%s\n' "$CODEX_COMPATIBLE_EXPECTED" | cmp -s - "$CODEX_COMPATIBLE_CAPTURE"; then
+  printf '%s\n' "$OFFLINE_EXPECTED" "$CODEX_COMPATIBLE_EXPECTED"
   exit 0
 fi
 
-printf '%s\n' 'demo-check: status=fail step=deterministic_rehearsal output=suppressed' >&2
+printf '%s\n' 'demo-check: status=fail step=codex_compatible_rehearsal output=suppressed' >&2
 exit 1

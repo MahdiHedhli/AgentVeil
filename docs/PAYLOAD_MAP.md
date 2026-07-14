@@ -139,8 +139,10 @@ a supported finding cannot silently pass.
 
 ## Inbound Responses SSE
 
-Live OpenAI mode performs no restoration. The table below applies only to the
-explicit loopback synthetic-test mode.
+Live OpenAI mode performs no restoration. The table below is the allowlist for
+the full loopback synthetic-harness mode. The real-Codex synthetic demo uses a
+narrower mode: only `response.output_text.delta` may restore; every other row
+remains tokenized on the wire.
 
 | SSE JSON `type` | Potential restoration sink | Other fields |
 |---|---|---|

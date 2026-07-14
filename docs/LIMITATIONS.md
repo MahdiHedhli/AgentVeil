@@ -92,18 +92,43 @@ tested with synthetic values only.
 Tokenized private IPs/internal hostnames remain AgentVeil tokens in live model
 responses. AgentVeil refuses `restore_display_text` when the upstream is OpenAI.
 
-Synthetic restoration is evidence code with narrower guarantees:
+Synthetic restoration is evidence code with narrower guarantees and two
+deliberately different modes. The lower-level synthetic harness restores exact
+owned tokens in all currently supported typed assistant display copies,
+including selected snapshots, so the deterministic suite can test the full
+transformer. The interactive `codex-demo` uses the real pinned Codex CLI, but
+keeps its model route on a capturing loopback fixture, sends no model request
+to OpenAI, and selects the narrower delta-only mode. This is not a categorical
+claim that the Codex process performs no other network activity. In the Codex
+mode:
+
+- only `response.output_text.delta` is restored for the live display;
+- done, completion, item, and response snapshot events remain tokenized on the
+  SSE wire, and a second turn proves the assistant history replays owned
+  tokens;
+- Codex 0.144.4's interactive TUI still keeps a resumable local thread,
+  including the synthetic raw user prompt, inside a private temporary home;
+- the temporary home and synthetic-only workspace are recursively removed and
+  verified absent on clean exit, while a forced kill, terminal loss, process
+  crash, or host crash can leave the resumable thread, raw synthetic prompt,
+  and restored synthetic display in temporary state; and
+- the dashboard labels the route as synthetic and reports display-only
+  restoration.
+
+The lower-level synthetic harness additionally tests selected typed assistant
+display fields. Across both synthetic paths, restoration requires:
 
 - exact owned token, same session, and unexpired mapping only;
-- selected typed assistant display-text fields only;
+- an explicitly selected typed assistant display-text field only;
 - no tool argument, command, URL, patch, identifier, error, reasoning metadata,
   or unknown-event restoration;
 - framing across every transport byte split is tested, but a token split across
   multiple semantic delta events is not reassembled; and
 - malformed/truncated or multiple-data-line SSE frames fail the local stream.
 
-The synthetic adapter does not establish Codex transcript retention safety.
-That is why the functionality is not enabled live.
+The synthetic adapter does not establish transcript-retention safety for a
+normal authenticated Codex/OpenAI session. That is why live restoration stays
+disabled.
 
 ## Token ledger tradeoffs
 
@@ -153,9 +178,11 @@ That is why the functionality is not enabled live.
   telemetry, enterprise admin control, multi-user service, or cloud ledger.
 - The dashboard is read-only, loopback-only, exact-Host validated, and value-
   free by construction, but intentionally unauthenticated. A local process can
-  still read its typed metadata; never port-forward it. “Synthetic wire proof”
-  is shown as passed only in the capturing demo and is not a live network
-  sensor.
+  still read its typed metadata; never port-forward it. State schema v2 adds a
+  client discriminator and expanded restoration/wire-proof enum labels, so
+  consumers must gate on the version and tolerate future unknown fields and
+  labels. “Synthetic wire proof” is shown as passed only in a capturing demo
+  and is not a live network sensor.
 - The packaged demo proves an offline synthetic route, not compatibility with a
   future Codex release or a broader live payload shape.
 

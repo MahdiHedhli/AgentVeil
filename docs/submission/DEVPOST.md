@@ -1,7 +1,8 @@
 # AgentVeil — Devpost draft
 
-> Draft basis: public release `v0.1.4`. Revalidate every claim against its
-> clean release report before submission.
+> Draft basis: candidate `v0.1.5`, with public `v0.1.4` as the baseline
+> judge artifact. Replace the release link and revalidate every count and claim
+> against the final clean release report before submission.
 
 ## Submission fields
 
@@ -10,10 +11,11 @@
 - **Planned track:** Developer Tools
 - **Repository:** [github.com/MahdiHedhli/AgentVeil](https://github.com/MahdiHedhli/AgentVeil) — public
 - **Public YouTube demo:** `<ADD PUBLIC YOUTUBE URL>`
-- **Demo:** Runs locally with `agentveil demo`; no hosted service or credential
-  is required for the offline synthetic proof
+- **Demo:** `agentveil codex-demo` runs the real pinned Codex TUI against a
+  capturing synthetic loopback fixture; no hosted service, Codex login, API
+  credential, or OpenAI model request is required
 - **Judge test:** [prebuilt release instructions](https://github.com/MahdiHedhli/AgentVeil/blob/main/docs/JUDGE_TEST.md)
-- **Codex `/feedback` Session ID:** `<ADD SESSION ID FROM THIS MAIN TASK>`
+- **Codex `/feedback` Session ID:** `019f611e-d944-7640-b73c-ca652925371c`
 
 AgentVeil is new Build Week work. Its first repository commit is dated July 14,
 2026, after the July 13 submission-period opening; the final entry should retain
@@ -36,6 +38,10 @@ AgentVeil launches the verified Codex CLI through an authenticated loopback cust
 - Tool and function outputs are inspected on the next model turn, not treated as trusted data.
 - Audit records contain classifications, decisions, and safe source-field metadata—not request bodies, protected values, auth material, or token mappings.
 - A loopback-only status surface exposes safe operational metadata without exposing a local authorization capability, and exact-Host validation limits browser DNS rebinding.
+- The real-Codex synthetic demo restores only the live
+  `response.output_text.delta` locally. Completion/history snapshots remain
+  tokenized, while credentials and private keys remain non-restorable whole-
+  request blocks.
 
 Unsupported or opaque model-visible shapes fail closed. AgentVeil does not install a local certificate authority, perform generic TLS interception, or require a Codex fork.
 
@@ -51,13 +57,27 @@ AgentVeil is a Rust application built around four boundaries:
 The packaged deterministic harness uses only synthetic fixtures and a capturing
 loopback upstream. Its wire-level checks include a hard-block case where the
 upstream request counter remains unchanged, outbound tokenization, tool-output
-inspection, value-free dashboard state, and audit-content assertions. The
-current Rust suite comprises 42 passing tests—37 library, 3 launcher, 1
-offline-demo CLI, and 1 gateway integration test—and passes strict Clippy. The
-release harness adds three Python regressions covering exact archive
-construction, secure report-path failure handling, and descriptor cleanup. The
-clean release report binds these counts to its exact commit; the gate must be
-repeated after any subsequent source change.
+inspection, value-free dashboard state, and audit-content assertions. A second
+synthetic mode launches the real pinned Codex CLI in a private temporary home,
+shows interception and delta-only display restoration in one window, then
+demonstrates same-session token replay on the next turn. Its model route stays
+loopback-only and sends no model request to OpenAI; this is not a categorical
+no-network claim about the Codex process.
+
+Automated check output, dashboard state, audit, and generated reports remain
+value-free. Only the explicitly interactive Codex TUI displays the documented
+synthetic email and private IPv4 fixtures. Codex keeps a resumable local thread
+inside that private home while it runs; AgentVeil deletes and verifies the
+entire root on clean exit, while a forced kill or crash may leave synthetic
+temporary state.
+
+The current Rust suite comprises 51 passing tests—43 library, 3 binary CLI, 2
+demo CLI integration, and 3 gateway end-to-end tests—and passes strict Clippy.
+The release harness adds four Python regressions covering exact archive
+construction, tag/binary version mismatch rejection, secure report-path
+failure handling, and descriptor cleanup. The clean release report must bind
+these working-tree counts to its exact commit; the gate must be repeated after
+any subsequent source change.
 
 ## How Codex was used meaningfully
 
@@ -79,7 +99,7 @@ A second challenge was integrating with normal Codex authentication without turn
 
 ## What we learned
 
-Privacy controls need wire evidence, not UI assurances. “Detected” is weaker than proving a raw fixture never reached the fake upstream. Tool output is also model input, restoration creates a separate local-data risk, and operational telemetry can itself become sensitive. Those observations shaped the fail-closed parser, zero-connect test, live restoration restriction, and value-free audit format.
+Privacy controls need wire evidence, not UI assurances. “Detected” is weaker than proving a raw fixture never reached the fake upstream. Tool output is also model input, restoration creates a separate local-data risk, and operational telemetry can itself become sensitive. Those observations shaped the fail-closed parser, zero-connect test, delta-only synthetic Codex path, live restoration restriction, and value-free audit format.
 
 ## What's next
 
@@ -90,7 +110,7 @@ Privacy controls need wire evidence, not UI assurances. “Detected” is weaker
 
 ## Evidence-bounded limitations
 
-AgentVeil is a hackathon prototype, not a production DLP product or a defense against a malicious local machine. The verified scope is local Codex CLI `0.144.4`, HTTP OpenAI Responses/SSE, supported text-bearing JSON shapes, and synthetic sensitive-data fixtures. Live OpenAI restoration is disabled. Codex IDE, cloud tasks, Responses WebSockets, browser ChatGPT, other AI clients, image/OCR input, binary bodies, and perfect detection are not claimed.
+AgentVeil is a hackathon prototype, not a production DLP product or a defense against a malicious local machine. The verified scope is local Codex CLI `0.144.4`, HTTP OpenAI Responses/SSE, supported text-bearing JSON shapes, and synthetic sensitive-data fixtures. Live OpenAI restoration is disabled. The interactive synthetic TUI is resumable while running and is safe only for its shipped fixtures; clean exit deletes its isolated state, but forced termination can leave residue. Codex IDE, cloud tasks, Responses WebSockets, browser ChatGPT, other AI clients, image/OCR input, binary bodies, and perfect detection are not claimed.
 
 No demo, screenshot, log, issue, or submission text may contain real credentials or personal data.
 

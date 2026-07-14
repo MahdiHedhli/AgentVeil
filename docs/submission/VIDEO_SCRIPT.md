@@ -1,83 +1,132 @@
-# AgentVeil demo video script
+# AgentVeil killer-demo video script
 
-Target runtime: **2:42–2:45**. Hard limit: **under 3:00**. Record English voiceover and publish the final video publicly on YouTube.
+Target runtime: **2:35 (155 seconds)**. Hard limit: **under 3:00**. Use the
+OmniVoice Studio **The Neighbor** profile: American, female, young adult,
+moderate pitch. Publish the approved final export publicly on YouTube.
 
-Use synthetic fixtures only. Record in a clean local account with notifications disabled. Never show an auth header, environment dump, shell history containing secrets, token mapping, request/response body, or personal filesystem path.
+Use synthetic fixtures only. Record in a clean Codex window with notifications
+disabled. Never show auth, environment dumps, request/response bodies, audit
+bodies, issued tokens, mappings, temporary paths, unrelated repositories, or
+unrelated Codex tasks.
 
 ## Timed shot list and voiceover
 
-### 0:00–0:12 — Cold open: the problem
+### 0:00-0:12 — The problem
 
-**Screen:** Tight shot of Codex about to work with a small synthetic project fixture. Overlay: “Useful context can contain sensitive data.”
+**Screen:** Clean title over a minimal synthetic code fixture: “Useful context
+can contain sensitive data.”
 
-**Voiceover:** “Coding agents need context, but project context can also contain credentials, personal data, and private infrastructure. A warning banner is not a security boundary.”
+**Voiceover:** “Coding agents need context. But that context can also contain
+credentials, personal data, and private infrastructure. A warning banner is not
+a security boundary.”
 
-### 0:12–0:28 — Product reveal
+### 0:12-0:27 — Launch the real app
 
-**Screen:** Start `agentveil demo`, then open its dashboard hero. Show the honest
-offline route: Synthetic client → AgentVeil → Loopback fixture, with “Synthetic
-wire proof: Passed.”
+**Screen:** In one clean Codex window, place AgentVeil's in-app dashboard above
+the real Codex TUI. Launch `agentveil codex-demo`. Make “Codex CLI to synthetic
+loopback proof” and “model route loopback-only” legible.
 
-**Voiceover:** “AgentVeil is a local privacy harness for Codex. It inspects supported Responses traffic before remote egress, blocks high-risk material, and replaces approved lower-risk values with short-lived session tokens.”
+**Voiceover:** “AgentVeil is a local privacy harness for Codex. This is the real
+pinned Codex command-line interface, routed through AgentVeil to a capturing
+synthetic loopback fixture.”
 
-### 0:28–0:49 — Explain the boundary
+### 0:27-0:46 — Show the boundary
 
-**Screen:** Animate or point through three labels: authenticated loopback gateway, schema-aware inspection, fixed OpenAI upstream. Show “No local CA. No Codex fork.”
+**Screen:** Hold the combined window. Point through Codex CLI → authenticated
+AgentVeil gateway → Loopback fixture. Show loopback, healthy audit, and the
+value-free dashboard.
 
-**Voiceover:** “A secure launcher creates an invocation-scoped Codex provider with random local authorization. The gateway is loopback-only, validates complete JSON shapes, and forwards only through a fixed route and header allowlist. Unknown model-visible shapes fail closed.”
+**Voiceover:** “The gateway authenticates its local caller, validates the full
+Responses payload, and fails closed before egress. The dashboard shows typed
+decisions only—never bodies, authorization, originals, tokens, or mappings.”
 
-### 0:49–1:15 — Tokenization demo
+### 0:46-1:07 — Intercept and restore in one shot
 
-**Screen:** Run `agentveil demo --check`; hold on its single value-free pass
-line. In the dashboard, highlight the email mask and private-IP tokenization
-activity rows. Do not display the fixture, request body, or a reusable mapping.
+**Screen:** Type and send the exact documented first synthetic prompt. While
+Codex waits, show the dashboard add the email and private-IPv4 protection rows
+and wire proof. Then show Codex display the exact synthetic assignments.
 
-**Voiceover:** “Here, synthetic lower-risk values are classified and replaced locally. The fake upstream sees placeholders rather than the originals. Tokens are random, session-scoped, time-bounded, and never written to the audit log.”
+**Voiceover:** “Watch one request. AgentVeil detects the synthetic email and
+private address, replaces both before the capturing boundary, and restores
+only the live output-text delta for Codex's local display. The model route stays
+loopback-only.”
 
-### 1:15–1:38 — Hard-block and zero-connect proof
+### 1:07-1:25 — Replay without friction
 
-**Screen:** Highlight `zero_connect=pass` in the demo result and the credential
-activity row showing Blocked / Not started. Add a small caption: “Capturing
-upstream count unchanged for block.”
+**Screen:** Type `Repeat the synthetic configuration exactly.` Show `Protected
+history replayed`, the prior values re-protected, and the same exact synthetic
+assignments displayed again.
 
-**Voiceover:** “Credentials and private keys are different: they are never tokenized or restorable. This synthetic credential is blocked before an upstream request begins, and the wire harness proves that with a zero request count.”
+**Voiceover:** “On the next turn, exact owned tokens replay only in the same
+unexpired session. Prior raw user history is independently re-protected, while
+completion and history snapshots remain tokenized on the wire.”
 
-### 1:38–2:02 — Tool output and GPT-5.6
+### 1:25-1:45 — Credentials still hard-block
 
-**Screen:** Show the sanitized transcript of the verified Codex tool-flow result, ending with the safe marker from GPT-5.6 Luna. Keep the original fixture off-screen or visibly synthetic and redacted.
+**Screen:** Show the packaged synthetic S0 case: blocked, upstream not started,
+and zero additional upstream requests. Do not show a reusable credential-like
+string.
 
-**Voiceover:** “Protection continues after tools run. In the live validation, Codex read synthetic local values, AgentVeil protected the next custom-tool output, and GPT-5.6 Luna completed the following turn through the guarded Responses route.”
+**Voiceover:** “Credentials and private keys are different. They are never
+tokenized, stored in the ledger, or restored. The synthetic hard-secret case is
+blocked before the fixture receives a request, and the harness proves the count
+stays unchanged.”
 
-### 2:02–2:23 — Safe observability
+### 1:45-2:03 — Meaningful GPT-5.6 evidence
 
-**Screen:** Dashboard activity and verification panels. Highlight class,
-action, safe source field, audit health, and synthetic wire-proof status. Do not
-show a “zero originals” UI metric; that is not an independent network sensor.
+**Screen:** Brief, separately labeled shot of the dated live Codex route ending
+in `WRAPPER_ROUTE_OK`, with `Synthetic wire proof: Not measured` and `Live
+restoration disabled` visible. Do not show fixture output.
 
-**Voiceover:** “The dashboard and audit expose decisions, not data. They show what class was handled, where it appeared, and whether the request started—without bodies, authorization, protected values, mappings, or token previews.”
+**Voiceover:** “Separately, a dated live validation sent protected synthetic
+tool output through the guarded Responses route to GPT-5.6 Luna. Live
+restoration stayed disabled; the capturing loopback test remains the wire
+proof.”
 
-### 2:23–2:38 — Built with Codex
+### 2:03-2:21 — Evidence
 
-**Screen:** Fast montage of the main Codex task: integration decision, adversarial test names, and a clean test summary. Avoid showing unrelated tasks or private context.
+**Screen:** Clean final-commit test summary: 51 Rust tests, 4 Python
+regressions, strict lint, deterministic wire proof, and value-free evidence.
 
-**Voiceover:** “We built AgentVeil in Codex itself. Codex helped inspect its real provider seam, implement the Rust gateway, coordinate adversarial reviews, and turn bypass findings—object keys, encoded text, overlaps, and tool results—into regression tests.”
+**Voiceover:** “The current candidate has fifty-one Rust tests and four Python
+release regressions, covering fail-closed parsing, encoded bypasses, zero-
+connect blocking, tool replay, delta-only restoration, and evidence hygiene.”
 
-### 2:38–2:45 — Honest close
+### 2:21-2:35 — Honest close
 
-**Screen:** Repository URL and final hero. Small label: “Local Codex CLI prototype · synthetic fixtures · live restoration disabled.”
+**Screen:** Repository URL and hero. Small label: “Codex CLI 0.144.4 · synthetic
+fixtures · live restoration disabled.”
 
-**Voiceover:** “AgentVeil is a focused prototype, not perfect DLP. Today it protects the verified local Codex CLI route, uses synthetic fixtures, and keeps live restoration disabled. The code and evidence are public.”
+**Voiceover:** “AgentVeil is a focused prototype, not perfect D L P. Its scope
+is explicit, its fixtures are synthetic, live restoration is disabled, and the
+code and evidence are public.”
 
 ## Recording acceptance checks
 
-- Final export is less than 3:00 and includes intelligible human voiceover.
-- Product behavior, meaningful Codex use, and meaningful GPT-5.6 use are all visible—not only asserted in slides.
-- The credential block shot visibly pairs the block with the fake-upstream zero count.
-- The tokenization shot never implies that live OpenAI restoration is enabled.
-- The offline dashboard shows the synthetic loopback route. Show the separate
-  Codex → AgentVeil → GPT-5.6 route only with the dated live validation.
-- Every sensitive-looking value is a documented synthetic fixture.
-- Repository and any shown report match the final release commit.
-- Upload is public on YouTube, plays while signed out, and has usable audio at normal volume.
-- Music, imagery, fonts, product marks, and every other media asset are original, licensed, or used with authorization.
-- Spoken audio, captions, and on-screen submission instructions are in English.
+- Final export is less than 3:00 and uses the approved The Neighbor voice at an
+  intelligible level.
+- The combined dashboard/TUI shot is a continuous authentic capture: first
+  prompt, interception, restored local display, replay prompt, and restored
+  display again.
+- The first prompt uses only the repository's exact synthetic email and private
+  IPv4 fixture. No real PII or credential appears.
+- The dashboard, automated check output, audit, and reports remain value-free;
+  only the explicitly interactive Codex TUI shows the documented synthetic
+  lower-risk originals.
+- The route is labeled synthetic loopback and “model route loopback-only.” The
+  video
+  never implies that live OpenAI restoration is enabled.
+- The credential shot pairs a whole-request block with zero additional
+  upstream requests and says S0 values are never tokenized/stored/restored.
+- The live GPT-5.6 shot is separately labeled, shows wire proof `Not measured`,
+  and does not expose fixture output.
+- If synthetic wire proof becomes `Failed`, an unknown token is accepted, or
+  cleanup does not verify the private root absent, discard the run.
+- The TUI's private thread is resumable while running. Record a clean `/exit`;
+  forced termination can leave synthetic temporary state.
+- Repository and test summary match the final clean release commit.
+- Upload is public on YouTube, plays while signed out, and has usable audio at
+  normal volume.
+- Music, imagery, fonts, product marks, and every other media asset are
+  original, licensed, or used with authorization. Spoken audio, captions, and
+  on-screen instructions are in English.

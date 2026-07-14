@@ -25,6 +25,7 @@ jobs:
           --verify-tag
           --draft
           --generate-notes
+          --notes "Judge instructions: [docs/JUDGE_TEST.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/JUDGE_TEST.md)"
           --title "AgentVeil $GITHUB_REF_NAME"
 
   build:
@@ -43,20 +44,19 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
           rustup override set 1.95.0
 
-      - name: Test and build
+      - name: Install pinned dependency auditor
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Run the complete release gate
         run: |
-          PYTHONDONTWRITEBYTECODE=1 \
-            python3 -m unittest discover -s tests -p 'test_*.py'
-          cargo test --locked --all-targets
-          cargo build --locked --release --bin agentveil
-          scripts/demo-check
+          scripts/release-check
 
       - name: Package checksummed judge artifact
         env:

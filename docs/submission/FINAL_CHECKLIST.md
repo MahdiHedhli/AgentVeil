@@ -24,19 +24,39 @@
 - [ ] Fresh clone on a clean machine/account can build, test, and run the documented demo without private local state.
 - [ ] Prebuilt SHA-256-verified release artifacts work without rebuilding on the stated Ubuntu 24.04 x86_64 and macOS 14+ arm64 judge platforms.
 - [ ] The release page links `docs/JUDGE_TEST.md`, and its offline command works without Codex login, an API key, or an OpenAI request.
-- [ ] Public YouTube video is under 3 minutes, includes voiceover, and visibly demonstrates the product, meaningful Codex use, and meaningful GPT-5.6 use.
+- [ ] Public YouTube video is under 3 minutes, uses the approved The Neighbor
+  voice, and visibly demonstrates the actual product, meaningful Codex use, and
+  meaningful GPT-5.6 use.
+- [ ] Killer-demo core is one clean continuous shot with AgentVeil's dashboard
+  above the real Codex TUI: first prompt, interception, local display,
+  same-session replay, and local display again. No unrelated project or task is
+  visible.
 - [ ] Repository, YouTube video, and any demo link open while signed out/incognito and do not request private access.
 - [ ] Keep the repository, video, release artifacts, and instructions free and unrestricted through at least August 9, 2026, covering the longer organizer schedule.
 
 ## Evidence gates
 
-- [ ] Run the complete Rust test suite, strict Clippy, formatting check, packaged demo check, benchmark, leak scanner, dependency audit, and release check on the final commit; record exact results rather than reusing an older count.
+- [ ] Run the complete Rust test suite, 4 Python regressions, strict Clippy,
+  formatting check, both `demo --check` and `codex-demo --check`, benchmark,
+  leak scanner, dependency audit, and release check on the final commit. The
+  working candidate has 51 Rust tests; record the final result rather than
+  blindly reusing that count.
 - [ ] Re-run the deterministic fake-upstream proof with synthetic fixtures: outbound tokenization, hard-secret block with zero upstream requests, tool-output inspection, fragmented SSE, and value-free audit assertions.
 - [ ] Re-run the real `agentveil codex` launcher proof on the pinned supported Codex CLI and `gpt-5.6-luna` using synthetic values only.
 - [ ] Confirm the protected tool-result reaches the next model turn and the audit contains neither original fixtures nor issued token text.
 - [ ] Confirm live OpenAI restoration remains disabled and the demo does not imply otherwise.
+- [ ] Confirm full synthetic-harness restoration and Codex delta-only
+  restoration are presented as distinct modes: Codex restores only
+  `response.output_text.delta`; done/item/completion/response snapshots remain
+  tokenized.
 - [ ] Confirm gateway, dashboard, fake upstream, and verification harness bind only to loopback.
 - [ ] Confirm dashboard assets/state reject a mismatched Host authority and live mode does not claim synthetic wire proof.
+- [ ] Confirm dashboard state remains value-free, schema v2 carries the client
+  discriminator and expanded enum labels, consumers gate on the version, and a
+  synthetic boundary failure is sticky and visibly reported as failed.
+- [ ] Run the interactive synthetic Codex demo through two turns, exit cleanly,
+  and verify its entire private runtime is absent. State plainly that the TUI is
+  resumable while running and forced kill/crash can leave synthetic residue.
 - [ ] Review open risks and limitations; fix release-blocking issues or state unsupported behavior plainly.
 
 ## Devpost copy and media
@@ -44,13 +64,18 @@
 - [ ] Paste and proof the final product description; replace every `<ADD ...>` placeholder.
 - [ ] Keep claims bounded to the final evidence report: no “perfect,” “production-ready,” or global “zero leaks” language.
 - [ ] Upload final screenshots only after the security review in `SCREENSHOT_CHECKLIST.md`.
+- [ ] Confirm only the explicitly interactive synthetic Codex TUI shows the
+  two documented lower-risk originals. Automated output, dashboard, audit, and
+  reports must remain value-free.
 - [ ] Verify project name, tagline, selected track, built-with list, repository URL, public video URL, and demo/run instructions.
 - [ ] Check spelling, image order, captions, thumbnail, and video audio on desktop and mobile.
 
 ## Required Codex feedback
 
 - [ ] Run `/feedback` in the **main Codex development task** before the submission deadline.
-- [ ] Copy the returned `/feedback` Session ID into the required Devpost field and `DEVPOST.md`; do not substitute another task's ID.
+- [ ] Confirm Devpost and `DEVPOST.md` contain the main-task `/feedback` Session
+  ID `019f611e-d944-7640-b73c-ca652925371c`; do not substitute another task's
+  ID.
 - [ ] Review the feedback, incorporate applicable changes, and record a concise disposition for anything intentionally not adopted.
 - [ ] Ensure the final entry explains how Codex materially contributed to architecture, implementation, adversarial review, and verification—not merely that it generated code.
 
