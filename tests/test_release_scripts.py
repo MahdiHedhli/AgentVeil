@@ -89,7 +89,7 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
             ):
                 PACKAGE_RELEASE.sha256_regular(protected_source)
             output = temporary / "dist"
-            tag = "v0.1.3"
+            tag = "v0.1.4"
             platform = "macos-arm64"
             package = f"agentveil-{tag}-{platform}"
             archive = output / f"{package}.tar.gz"
@@ -167,6 +167,21 @@ class ReleaseWorkflowPackagingTests(unittest.TestCase):
                 checksum.read_text(encoding="ascii"),
                 f"{archive_digest}  {archive.name}\n",
             )
+            third_binary_alias = temporary / "agentveil-test-binary-third-link"
+            os.link(binary, third_binary_alias)
+            self.assertEqual(binary.stat().st_nlink, 3)
+            with self.assertRaisesRegex(
+                PACKAGE_RELEASE.PackageError,
+                "^source_not_exclusive_regular_file$",
+            ):
+                PACKAGE_RELEASE.package_release(
+                    tag=tag,
+                    platform=platform,
+                    binary=binary,
+                    output_dir=temporary / "three-link-output",
+                )
+            third_binary_alias.unlink()
+            self.assertEqual(binary.stat().st_nlink, 2)
             extra_archive = temporary / "extra-member.tar.gz"
             with tarfile.open(archive, "r:gz") as source_archive:
                 with tarfile.open(

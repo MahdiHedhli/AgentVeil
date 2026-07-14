@@ -162,13 +162,16 @@ While the session is active, open
 and deliberately unauthenticated because its state is value-free and no gateway
 credential should enter browser state. Show it as visibility, not wire proof.
 
-The shell output visibly contains only the known synthetic email and private-IP
-lines because it is local. Those classes are protected by the live default
-policy. The project label is configured only by the loopback-only demo policy
-and is deliberately excluded from this live tool output. The privacy assertion
-concerns the next model request: the gateway scans the tool output before
-forwarding it. Live response restoration is disabled, so the model receives the
-configured mask/token replacements, not restored originals.
+The shell output visibly contains the known synthetic email and private-IP
+lines plus `TOKEN_ENV_EMPTY` because it is local. `TOKEN_ENV_PRESENT` is a
+failure signal: stop the demo if it appears. The protected classes are covered
+by the live default policy; the marker confirms the child shell did not inherit
+AgentVeil's gateway credential. The project label is configured only by the
+loopback-only demo policy and is deliberately excluded from this live tool
+output. The privacy assertion concerns the next model request: the gateway
+scans the tool output before forwarding it. Live response restoration is
+disabled, so the model receives the configured mask/token replacements, not
+restored originals.
 
 The first dashboard request row can be `Structure accepted`; it contains the
 safe instruction. The next row must show protected finding metadata for the
