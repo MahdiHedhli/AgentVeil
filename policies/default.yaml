@@ -1,0 +1,40 @@
+version: 1
+name: default
+description: Balanced local protection for verified Codex CLI traffic
+defaults:
+  unknown_sensitive: block
+  raw_logging: false
+  restoration: deny
+  max_request_bytes: 4194304
+  ledger_max_entries: 4096
+categories:
+  credentials:
+    action: block
+  private_keys:
+    action: block
+  security.jwt:
+    action: block
+  network.database_url:
+    action: block
+  pii.email:
+    action: mask
+  pii.phone:
+    action: mask
+  infrastructure.private_ip:
+    action: tokenize
+    restorable: true
+    ttl_seconds: 900
+  infrastructure.hostname:
+    action: tokenize
+    restorable: true
+    ttl_seconds: 900
+  filesystem.home_path:
+    action: mask
+  custom.term:
+    action: mask
+  agentveil.token_namespace:
+    action: block
+detectors:
+  internal_hostname_suffixes: []
+  custom_terms: []
+  home_prefixes: []

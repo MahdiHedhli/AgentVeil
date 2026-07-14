@@ -1,0 +1,45 @@
+version: 1
+name: demo
+description: Synthetic-only deterministic demonstration policy
+defaults:
+  unknown_sensitive: block
+  raw_logging: false
+  restoration: deny
+  max_request_bytes: 1048576
+  ledger_max_entries: 256
+categories:
+  credentials:
+    action: block
+  private_keys:
+    action: block
+  security.jwt:
+    action: block
+  network.database_url:
+    action: block
+  pii.email:
+    action: tokenize
+    restorable: true
+    ttl_seconds: 300
+  pii.phone:
+    action: mask
+  infrastructure.private_ip:
+    action: tokenize
+    restorable: true
+    ttl_seconds: 300
+  infrastructure.hostname:
+    action: tokenize
+    restorable: true
+    ttl_seconds: 300
+  filesystem.home_path:
+    action: mask
+  custom.term:
+    action: mask
+  agentveil.token_namespace:
+    action: block
+detectors:
+  internal_hostname_suffixes:
+    - .agentveil.test
+  custom_terms:
+    - PROJECT-VEIL-DEMO
+  home_prefixes:
+    - /Users/demo/

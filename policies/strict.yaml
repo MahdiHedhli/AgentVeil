@@ -1,0 +1,36 @@
+version: 1
+name: strict
+description: Block credentials and lower-risk sensitive identifiers without restoration
+defaults:
+  unknown_sensitive: block
+  raw_logging: false
+  restoration: deny
+  max_request_bytes: 4194304
+  ledger_max_entries: 1024
+categories:
+  credentials:
+    action: block
+  private_keys:
+    action: block
+  security.jwt:
+    action: block
+  network.database_url:
+    action: block
+  pii.email:
+    action: block
+  pii.phone:
+    action: block
+  infrastructure.private_ip:
+    action: block
+  infrastructure.hostname:
+    action: block
+  filesystem.home_path:
+    action: block
+  custom.term:
+    action: block
+  agentveil.token_namespace:
+    action: block
+detectors:
+  internal_hostname_suffixes: []
+  custom_terms: []
+  home_prefixes: []
