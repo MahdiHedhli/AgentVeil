@@ -14,10 +14,11 @@ Codex CLI exactly `0.144.4`. The offline proof is the recommended judge path.
 
 ## Linux x86_64
 
-Replace `v0.1.4` only if the submission points to a newer release:
+Candidate `v0.1.5` is the intended submission release. Run these commands only
+after that tag and its checksums are publicly available:
 
 ```sh
-tag=v0.1.4
+tag=v0.1.5
 asset="agentveil-${tag}-linux-x86_64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"
@@ -30,7 +31,7 @@ tar -xzf "$asset"
 ## macOS arm64
 
 ```sh
-tag=v0.1.4
+tag=v0.1.5
 asset="agentveil-${tag}-macos-arm64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"
@@ -46,10 +47,23 @@ Exact success output:
 demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free
 ```
 
-The command starts only ephemeral loopback listeners, uses embedded synthetic
-fixtures and a capturing fake upstream, verifies hard-secret zero-connect,
-tokenization, tool-output re-entry, dashboard state, and value-free audit
-records, then removes its temporary audit directory. For the interactive local
+An optional second value-free check exercises the Codex-compatible request and
+stream contract with a synthetic client. It does not launch Codex:
+
+```sh
+"./agentveil-${tag}-linux-x86_64/agentveil" codex-demo --check
+# On macOS, use ./agentveil-${tag}-macos-arm64/agentveil instead.
+```
+
+```text
+codex-demo-check: status=pass route=synthetic_client_codex_compatible block=pass tokenize=pass restore_delta=pass replay=pass wire_proof=pass audit=pass output=value_free
+```
+
+Together, the two checks start only ephemeral loopback listeners, use embedded
+synthetic fixtures and capturing fake upstreams, and verify hard-secret
+zero-connect, tokenization, tool-output re-entry, the Codex-compatible stream
+and replay contract, dashboard state, and value-free audit records. They remove
+their temporary audit directories before returning. For the interactive local
 dashboard, replace `demo --check` with `demo` and open the printed loopback URL.
 
 The release archives are not Apple-notarized or code-signed production

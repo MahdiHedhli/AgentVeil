@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,7 +31,7 @@ use crate::engine::{
 };
 use crate::ledger::SessionScope;
 use crate::policy::ValidatedPolicy;
-use crate::sse::SseTransformer;
+use crate::sse::{SseRestorationMode, SseTransformer};
 
 const LOCAL_SESSION_HEADER: &str = "x-agentveil-session";
 const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
@@ -47,8 +47,53 @@ pub struct GatewayConfig {
     pub local_session_token: Zeroizing<String>,
     pub audit_path: PathBuf,
     pub upstream: UpstreamMode,
-    pub restore_display_text: bool,
+    pub client: GatewayClient,
+    pub restoration_mode: RestorationMode,
     pub synthetic_wire_proof: SyntheticWireProof,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GatewayClient {
+    Generic,
+    CodexCli,
+}
+
+impl GatewayClient {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::CodexCli => "codex_cli",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestorationMode {
+    Disabled,
+    /// Synthetic harness compatibility mode. Restores every currently supported
+    /// assistant display-text copy, including completed response snapshots.
+    SyntheticDisplayText,
+    /// Codex-safe synthetic mode. Restores only streamed assistant text deltas;
+    /// completed response items remain tokenized for history and replay.
+    SyntheticDisplayDeltaOnly,
+}
+
+impl RestorationMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::SyntheticDisplayText => "synthetic_full",
+            Self::SyntheticDisplayDeltaOnly => "synthetic_display_delta_only",
+        }
+    }
+
+    const fn sse_mode(self) -> Option<SseRestorationMode> {
+        match self {
+            Self::Disabled => None,
+            Self::SyntheticDisplayText => Some(SseRestorationMode::SyntheticDisplayText),
+            Self::SyntheticDisplayDeltaOnly => Some(SseRestorationMode::SyntheticDisplayDeltaOnly),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -85,7 +130,7 @@ impl UpstreamMode {
         matches!(self.0, UpstreamKind::LoopbackTest(_))
     }
 
-    fn label(&self) -> &'static str {
+    pub(crate) fn label(&self) -> &'static str {
         match self.0 {
             UpstreamKind::OpenAi => "openai",
             UpstreamKind::LoopbackTest(_) => "loopback_test",
@@ -112,30 +157,49 @@ fn validate_loopback_test_url(url: &Url) -> Result<(), GatewayError> {
 
 #[derive(Clone, Default)]
 pub struct SyntheticWireProof {
-    passed: Arc<AtomicBool>,
+    state: Arc<AtomicU8>,
 }
 
 impl SyntheticWireProof {
+    const UNMEASURED: u8 = 0;
+    const PASSED: u8 = 1;
+    const FAILED: u8 = 2;
+
     pub fn unmeasured() -> Self {
         Self::default()
     }
 
     pub(crate) fn mark_passed(&self) {
-        self.passed.store(true, Ordering::Release);
+        let _ = self.state.compare_exchange(
+            Self::UNMEASURED,
+            Self::PASSED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
     }
 
-    fn passed(&self) -> bool {
-        self.passed.load(Ordering::Acquire)
+    pub(crate) fn mark_failed(&self) {
+        self.state.store(Self::FAILED, Ordering::Release);
+    }
+
+    pub(crate) fn label(&self) -> &'static str {
+        match self.state.load(Ordering::Acquire) {
+            Self::UNMEASURED => "not_measured",
+            Self::PASSED => "synthetic_passed",
+            Self::FAILED => "synthetic_failed",
+            _ => "synthetic_failed",
+        }
     }
 }
 
 struct GatewayState {
     engine: Mutex<PrivacyEngine>,
-    client: reqwest::Client,
+    http_client: reqwest::Client,
     scope: SessionScope,
     expected_local_token: Zeroizing<String>,
     upstream: UpstreamMode,
-    restore_display_text: bool,
+    gateway_client: GatewayClient,
+    restoration_mode: RestorationMode,
     audit: AuditSink,
     audit_healthy: AtomicBool,
     session_pseudonym: String,
@@ -179,7 +243,7 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         return Err(GatewayError::InvalidLocalSessionToken);
     }
     config.upstream.validate()?;
-    if config.restore_display_text && config.upstream.is_openai() {
+    if config.restoration_mode != RestorationMode::Disabled && config.upstream.is_openai() {
         return Err(GatewayError::LiveRestorationNotVerified);
     }
     if config.policy.name() == "demo" && config.upstream.is_openai() {
@@ -193,7 +257,7 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
     let expected_dashboard_authority = config.bind.to_string();
     let state = Arc::new(GatewayState {
         engine: Mutex::new(PrivacyEngine::new(config.policy)?),
-        client: reqwest::Client::builder()
+        http_client: reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -202,7 +266,8 @@ pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
         scope: config.scope,
         expected_local_token: config.local_session_token,
         upstream: config.upstream,
-        restore_display_text: config.restore_display_text,
+        gateway_client: config.client,
+        restoration_mode: config.restoration_mode,
         audit: AuditSink::open(&config.audit_path)?,
         audit_healthy: AtomicBool::new(true),
         session_pseudonym,
@@ -258,25 +323,18 @@ async fn dashboard_state(State(state): State<Arc<GatewayState>>, headers: Header
         .map(|activity| activity.iter().cloned().collect())
         .unwrap_or_default();
     let snapshot = DashboardSnapshot {
-        schema_version: 1,
+        schema_version: 2,
         protected: true,
         binding: "loopback",
         transport: "responses_sse",
         upstream: state.upstream.label(),
-        restoration: if state.restore_display_text {
-            "synthetic_display_only"
-        } else {
-            "disabled"
-        },
+        client: state.gateway_client.label(),
+        restoration: state.restoration_mode.label(),
         audit_healthy: state.audit_healthy.load(Ordering::Acquire),
         session_pseudonym: state.session_pseudonym.clone(),
         policy_name: state.policy_name.clone(),
         request_count: state.request_sequence.load(Ordering::Relaxed),
-        wire_proof: if state.synthetic_wire_proof.passed() {
-            "synthetic_passed"
-        } else {
-            "not_measured"
-        },
+        wire_proof: state.synthetic_wire_proof.label(),
         activity,
     };
     let mut response = axum::Json(snapshot).into_response();
@@ -342,11 +400,7 @@ async fn health(State(state): State<Arc<GatewayState>>) -> impl IntoResponse {
         binding: "loopback",
         transport: "responses_sse",
         upstream: state.upstream.label(),
-        restoration: if state.restore_display_text {
-            "synthetic_display_only"
-        } else {
-            "disabled"
-        },
+        restoration: state.restoration_mode.label(),
         audit_healthy: state.audit_healthy.load(Ordering::Relaxed),
     })
 }
@@ -396,7 +450,7 @@ async fn models(State(state): State<Arc<GatewayState>>, headers: HeaderMap, uri:
     };
     let forwarded = forward_request_headers(&headers, &state.upstream, false);
     match state
-        .client
+        .http_client
         .get(target)
         .headers(forwarded)
         .timeout(Duration::from_secs(15))
@@ -564,7 +618,7 @@ async fn responses(
         );
     }
     let upstream = state
-        .client
+        .http_client
         .post(target)
         .headers(forwarded_headers)
         .body(forward_body)
@@ -612,14 +666,18 @@ fn relay_upstream(upstream: reqwest::Response, state: Option<Arc<GatewayState>>)
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/event-stream"));
-    let restore = state
-        .as_ref()
-        .is_some_and(|state| state.restore_display_text && is_sse);
+    let restoration_mode = if is_sse {
+        state
+            .as_ref()
+            .and_then(|state| state.restoration_mode.sse_mode())
+    } else {
+        None
+    };
     let source = upstream.bytes_stream();
-    let body = if let (true, Some(state)) = (restore, state) {
+    let body = if let (Some(restoration_mode), Some(state)) = (restoration_mode, state) {
         let stream = stream! {
             let mut source = source;
-            let mut transformer = SseTransformer::default();
+            let mut transformer = SseTransformer::new(restoration_mode);
             while let Some(chunk) = source.next().await {
                 let chunk = match chunk {
                     Ok(chunk) => chunk,
@@ -998,6 +1056,26 @@ fn unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(duration_ms)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SyntheticWireProof;
+
+    #[test]
+    fn synthetic_wire_proof_failure_has_sticky_precedence() {
+        let proof = SyntheticWireProof::unmeasured();
+        assert_eq!(proof.label(), "not_measured");
+
+        proof.mark_passed();
+        assert_eq!(proof.label(), "synthetic_passed");
+
+        proof.mark_failed();
+        assert_eq!(proof.label(), "synthetic_failed");
+
+        proof.mark_passed();
+        assert_eq!(proof.label(), "synthetic_failed");
+    }
 }
 
 async fn shutdown_signal() {

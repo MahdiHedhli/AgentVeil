@@ -23,6 +23,7 @@ pub struct DashboardSnapshot {
     pub binding: &'static str,
     pub transport: &'static str,
     pub upstream: &'static str,
+    pub client: &'static str,
     pub restoration: &'static str,
     pub audit_healthy: bool,
     pub session_pseudonym: String,
@@ -52,6 +53,12 @@ mod tests {
         assert!(HTML.contains("data-proof-scope=\"synthetic\""));
         assert!(HTML.contains("data-proof-scope=\"configuration\""));
         assert!(JS.contains("markStateUnavailable"));
+        assert!(JS.contains("state.schema_version !== 2"));
+        assert!(JS.contains("![\"openai\", \"loopback_test\"].includes(state.upstream)"));
+        assert!(JS.contains(
+            "![\"disabled\", \"synthetic_full\", \"synthetic_display_delta_only\"].includes(state.restoration)"
+        ));
+        assert!(JS.contains("renderActivityUnavailable"));
         assert!(!JS.contains("document.querySelectorAll(\".check\")"));
     }
 
@@ -61,6 +68,19 @@ mod tests {
         assert!(JS.contains("Local Responses client"));
         assert!(JS.contains("OpenAI Responses"));
         assert!(HTML.contains("Synthetic wire proof"));
-        assert!(HTML.contains("Live restoration is disabled"));
+        assert!(HTML.contains("id=\"restoration-state\""));
+        assert!(JS.contains("Synthetic display restoration · model route loopback-only"));
+        assert!(JS.contains("Private isolated session"));
+        assert!(!JS.contains("Private ephemeral session"));
+        assert!(JS.contains("Live restoration is disabled"));
+        assert!(JS.contains(
+            "state.client === \"codex_cli\" &&\n    syntheticRoute &&\n    state.restoration === \"synthetic_display_delta_only\""
+        ));
+        assert!(JS.contains("Synthetic delta restoration"));
+        assert!(JS.contains("syntheticProof && !syntheticCodexRoute"));
+        assert!(JS.contains("state.wire_proof === \"synthetic_failed\""));
+        assert!(JS.contains("Capturing boundary observed forbidden content · discard this run"));
+        assert!(JS.contains("Protected history replayed"));
+        assert!(JS.contains("prior value"));
     }
 }

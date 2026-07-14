@@ -65,6 +65,7 @@ EVIDENCE_DIR='reports/generated'
 DEMO_EVIDENCE="$EVIDENCE_DIR/release-demo-check.txt"
 LEAK_REPORT="$EVIDENCE_DIR/release-leak-scan.json"
 DEMO_EXPECTED='demo-check: status=pass route=synthetic_loopback allow=pass tokenize=pass zero_connect=pass tool_reentry=pass dashboard=pass audit=pass output=value_free'
+CODEX_COMPATIBLE_EXPECTED='codex-demo-check: status=pass route=synthetic_client_codex_compatible block=pass tokenize=pass restore_delta=pass replay=pass wire_proof=pass audit=pass output=value_free'
 
 prepare_evidence_directory() {
   if [[ -L reports || ! -d reports ]]; then
@@ -109,7 +110,8 @@ capture_demo_evidence() {
     printf '%s\n' 'release-check: step=demo_check status=fail output=suppressed' >&2
     exit 1
   fi
-  if ! printf '%s\n' "$DEMO_EXPECTED" | cmp -s - "$temporary_output"; then
+  if ! printf '%s\n' "$DEMO_EXPECTED" "$CODEX_COMPATIBLE_EXPECTED" \
+    | cmp -s - "$temporary_output"; then
     rm -f "$temporary_output"
     printf '%s\n' 'release-check: step=demo_check status=fail output=unexpected' >&2
     exit 1

@@ -2,20 +2,35 @@
 
 Capture only final-build surfaces with synthetic fixtures. Prefer four strong screenshots over a large sequence of repetitive terminal images.
 
-## Required set
+## Required killer-demo set
 
-- [ ] **Offline proof hero:** full desktop view with the AgentVeil name,
-  “Privacy boundary” headline, Synthetic client → AgentVeil → Loopback fixture
-  route, protected-session state, audit health, Responses status, and
-  “Synthetic wire proof: Passed.”
-- [ ] **Safe activity detail:** selected event showing only data class, action, safe source field, and upstream outcome. Confirm there is no original value, token preview, auth material, mapping, request body, or personal path anywhere in the frame.
+- [ ] **One-shot real app hero:** one clean Codex window with AgentVeil's
+  in-app dashboard above the real Codex TUI. The dashboard must show Codex CLI
+  → AgentVeil → capturing synthetic loopback fixture, `Synthetic wire proof:
+  Passed`, and `Synthetic display restoration · model route loopback-only`. No
+  unrelated project, sidebar, task, tab, or history may be visible.
+- [ ] **Intercepted first turn:** same combined window after the first exact
+  synthetic prompt. Dashboard activity shows only class/action/source metadata;
+  the Codex TUI may show the documented synthetic email/private IPv4 result.
+  No issued token, mapping, auth material, request body, audit body, or personal
+  path may appear.
+- [ ] **Protected replay:** same combined window after `Repeat the synthetic
+  configuration exactly.` Dashboard shows `Protected history replayed` and
+  prior values re-protected; Codex shows the same exact synthetic assignments.
+  Caption that only output-text deltas are restored and snapshots stay
+  tokenized.
 - [ ] **Hard block / zero-connect:** synthetic credential blocked alongside a deterministic fake-upstream request count of `0`. The frame must make clear that this is a synthetic wire-level test.
-- [ ] **Protected tool-result flow:** concise view of the Codex → local tool → AgentVeil → GPT-5.6 Luna workflow and its safe completion marker. Do not expose raw fixtures or environment data.
+- [ ] **Protected tool-result flow:** separately labeled live view of Codex →
+  local tool → AgentVeil → GPT-5.6 Luna and its safe completion marker. Show
+  `Not measured` for wire proof and `Live restoration disabled`; do not expose
+  raw fixtures or environment data.
 
 ## Optional supporting set
 
 - [ ] **Architecture:** simple three-boundary diagram covering secure launcher, schema-aware gateway, and fixed upstream; include “loopback only” and “live restoration disabled.”
-- [ ] **Verification:** clean final test/release summary with the exact commit SHA. Avoid using a stale hard-coded test count.
+- [ ] **Verification:** clean final test/release summary with exact commit SHA,
+  51 Rust tests, and 4 Python regressions. Re-run first; do not use the count if
+  the final release report differs.
 - [ ] **Live route:** if captured, show Codex → AgentVeil → GPT-5.6 separately
   from the offline proof and retain the truthful “Not measured” wire-proof
   state.
@@ -37,4 +52,8 @@ Capture only final-build surfaces with synthetic fixtures. Prefer four strong sc
 - [ ] Confirm all sensitive-looking values are the repository's documented synthetic fixtures.
 - [ ] Confirm no real Codex config, auth file, environment dump, shell history, donor runtime state, or audit body is visible.
 - [ ] Confirm the dashboard is connected only to loopback and exposes safe metadata.
+- [ ] Confirm every dashboard field is value-free. Only the explicitly
+  interactive synthetic Codex TUI may show the documented lower-risk originals.
+- [ ] Confirm the frame labels the TUI's state honestly: private and isolated,
+  not ephemeral. Clean exit deletes it; forced termination can leave residue.
 - [ ] Have a second reviewer inspect original-resolution images before upload.

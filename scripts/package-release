@@ -10,9 +10,11 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Final
@@ -32,6 +34,7 @@ DIRECTORY_MODE: Final = 0o755
 DATA_MODE: Final = 0o644
 EXECUTABLE_MODE: Final = 0o755
 COPY_BUFFER_BYTES: Final = 1024 * 1024
+BINARY_VERSION_TIMEOUT_SECONDS: Final = 5
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,38 @@ def sha256_regular(path: Path) -> str:
 def verify_pinned_fixture(path: Path) -> None:
     if sha256_regular(path) != FIXTURE_SHA256:
         raise PackageError("fixture_hash_mismatch")
+
+
+def cargo_package_version() -> str:
+    try:
+        with open_regular(REPO_ROOT / "Cargo.toml") as stream:
+            manifest = tomllib.load(stream)
+    except (OSError, PackageError, tomllib.TOMLDecodeError) as error:
+        raise PackageError("cargo_manifest_invalid") from error
+    package = manifest.get("package")
+    version = package.get("version") if isinstance(package, dict) else None
+    if not isinstance(version, str) or not TAG_PATTERN.fullmatch(f"v{version}"):
+        raise PackageError("cargo_package_version_invalid")
+    return version
+
+
+def verify_binary_version(binary: Path, package_version: str) -> None:
+    expected = f"agentveil {package_version}".encode("ascii")
+    try:
+        completed = subprocess.run(
+            [os.fspath(binary.absolute()), "--version"],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=BINARY_VERSION_TIMEOUT_SECONDS,
+            env={"LANG": "C", "LC_ALL": "C"},
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise PackageError("binary_version_unavailable") from error
+    accepted_stdout = (expected, expected + b"\n", expected + b"\r\n")
+    if completed.returncode != 0 or completed.stderr or completed.stdout not in accepted_stdout:
+        raise PackageError("binary_version_mismatch")
 
 
 def write_exclusive(path: Path, content: bytes, mode: int) -> None:
@@ -391,6 +426,9 @@ def package_release(
         raise PackageError("invalid_tag")
     if platform not in SUPPORTED_PLATFORMS:
         raise PackageError("unsupported_platform")
+    package_version = cargo_package_version()
+    if tag != f"v{package_version}":
+        raise PackageError("tag_version_mismatch")
     verify_pinned_fixture(REPO_ROOT / FIXTURE_PATH)
     ensure_output_directory(output_dir)
     package_name = f"agentveil-{tag}-{platform}"
@@ -408,6 +446,7 @@ def package_release(
             stage_root = temporary_path / package_name
             stage_files(stage_root, binary)
             validate_stage(stage_root)
+            verify_binary_version(stage_root / BINARY_SPEC.destination, package_version)
             staged_archive = temporary_path / archive_name
             staged_checksum = temporary_path / checksum_name
             build_archive(stage_root, package_name, staged_archive)

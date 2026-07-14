@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 use agentveil::VERSION;
-use agentveil::gateway::{GatewayConfig, SyntheticWireProof, UpstreamMode, build_router, serve};
+use agentveil::gateway::{
+    GatewayClient, GatewayConfig, RestorationMode, SyntheticWireProof, UpstreamMode, build_router,
+    serve,
+};
 use agentveil::ledger::SessionScope;
 use agentveil::policy::ValidatedPolicy;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -51,6 +54,12 @@ enum Commands {
     /// Run the synthetic-only offline proof and local dashboard.
     Demo {
         /// Exit after the deterministic proof instead of serving the dashboard.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Launch a real Codex CLI against the synthetic capturing-loopback restoration demo.
+    CodexDemo {
+        /// Verify the synthetic Codex route without launching the interactive CLI.
         #[arg(long)]
         check: bool,
     },
@@ -117,6 +126,16 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             agentveil::demo::run(check).await?;
             Ok(())
         }
+        Commands::CodexDemo { check } => {
+            if check {
+                agentveil::demo::run_codex_check().await?;
+            } else {
+                let codex_path = resolve_codex()?;
+                codex_version(&codex_path)?;
+                agentveil::demo::run_codex(codex_path).await?;
+            }
+            Ok(())
+        }
         Commands::Codex {
             bind,
             policy,
@@ -146,7 +165,12 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 local_session_token,
                 audit_path: audit,
                 upstream,
-                restore_display_text,
+                client: GatewayClient::Generic,
+                restoration_mode: if restore_display_text {
+                    RestorationMode::SyntheticDisplayText
+                } else {
+                    RestorationMode::Disabled
+                },
                 synthetic_wire_proof: SyntheticWireProof::unmeasured(),
             })
             .await?;
@@ -195,7 +219,8 @@ async fn launch_codex(
         local_session_token: local_session_token.clone(),
         audit_path,
         upstream: UpstreamMode::openai(),
-        restore_display_text: false,
+        client: GatewayClient::Generic,
+        restoration_mode: RestorationMode::Disabled,
         synthetic_wire_proof: SyntheticWireProof::unmeasured(),
     })?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -462,6 +487,8 @@ enum CliError {
     Gateway(#[from] agentveil::gateway::GatewayError),
     #[error("offline deterministic demo failed")]
     Demo(#[from] agentveil::demo::DemoError),
+    #[error("synthetic Codex demonstration failed")]
+    CodexDemo(#[from] agentveil::demo::CodexDemoError),
 }
 
 #[cfg(test)]

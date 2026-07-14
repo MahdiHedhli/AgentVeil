@@ -49,14 +49,21 @@ With `requires_openai_auth = true`, Codex sent authorization plus ChatGPT accoun
 
 - Responses SSE transport is verified through the custom provider.
 - Codex supplied its tool definitions to the provider, proving the request seam includes tool capability metadata.
-- Full tool-call execution/output replay and multi-turn restoration scope are not yet verified. They remain release gates and are not current product claims.
+- At the original decision point, full tool-call execution/output replay and
+  multi-turn restoration were not verified. Candidate `v0.1.5` now verifies a
+  real-Codex, two-turn synthetic replay against a capturing loopback fixture,
+  with restoration limited to `response.output_text.delta`. This does not
+  expand the live OpenAI restoration claim.
 - WebSockets are intentionally disabled.
 
 ## Failure cases and security implications
 
 - The initial fake provider did not implement model discovery, causing harmless refresh warnings; the real gateway must proxy the allowlisted models route.
 - A custom provider without local authentication would be an authenticated relay. The production route requires a random per-session local header and loopback binding.
-- Restoring text before Codex consumes it may persist originals in local transcripts. Restoration remains restricted until transcript behavior is verified.
+- Restoring text before Codex consumes it may persist originals in local
+  threads. Live OpenAI restoration remains disabled until transcript behavior
+  is verified. The synthetic real-Codex demo uses a private temporary home,
+  verifies deletion on clean exit, and documents forced-kill/crash residue.
 - Unknown model-visible payload shapes fail closed; binary, image, encrypted, compressed, and opaque content are unsupported.
 
 ## Unsupported paths

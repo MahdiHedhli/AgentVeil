@@ -5,9 +5,15 @@ observations. All fixtures below are intentionally synthetic. Never substitute
 a real credential, personal record, customer name, internal hostname, or
 production address.
 
-The strongest current demo is the packaged deterministic wire proof. The live
-Codex step demonstrates the verified route and a synthetic tool-output next
-turn, but it is not a replacement for the capturing-upstream zero-connect test.
+The strongest automated evidence is the packaged deterministic wire proof. Its
+terminal output, dashboard, audit, and generated reports are value-free. The
+presentation path is a separate real-Codex TUI whose model route points only to
+a capturing synthetic loopback fixture; it intentionally displays the
+documented synthetic email and private IPv4 values after local delta
+restoration. Neither path makes an OpenAI model request. This does not claim
+the Codex process makes no other network request. The separately scoped live
+route remains useful evidence, but it is not a replacement for the capturing-
+upstream zero-connect test.
 
 ## 1. Preflight
 
@@ -58,7 +64,74 @@ proxy, and makes no OpenAI request.
 The dashboard's “Synthetic wire proof: Passed” state is available only in this
 capturing harness. A normal live session truthfully displays “Not measured.”
 
-## 3. Inspect the focused deterministic wire test
+## 3. Run the real Codex synthetic round trip
+
+This is the presentation path for transparent, lower-risk token restoration:
+
+```sh
+"$AGENTVEIL_BIN" codex-demo --check
+"$AGENTVEIL_BIN" codex-demo
+```
+
+The `--check` form is non-interactive: a synthetic client exercises the
+Codex-compatible request and stream contract, emits only a value-free pass/fail
+summary, and does not launch Codex. Its exact output is:
+
+```text
+codex-demo-check: status=pass route=synthetic_client_codex_compatible block=pass tokenize=pass restore_delta=pass replay=pass wire_proof=pass audit=pass output=value_free
+```
+
+In a source checkout, `scripts/demo-check` runs both automated modes and emits
+exactly the offline line from section 2 followed by this Codex-compatible line.
+The release check captures both lines as value-free evidence.
+
+The interactive form launches the real pinned Codex CLI with a private
+temporary home and synthetic-only workspace. Its provider routes to an
+authenticated AgentVeil gateway and then to a capturing loopback fixture. It
+does not read Codex login state and makes no OpenAI model request because the
+model route is loopback-only. This is not a categorical no-network claim about
+the Codex process. Codex 0.144.4's interactive TUI keeps a resumable thread
+inside that isolated home while it runs. It is not an ephemeral Codex session:
+AgentVeil recursively removes the entire private runtime and verifies its
+absence only after a clean exit.
+
+Enter this exact one-line synthetic prompt:
+
+```text
+Return this explicitly synthetic test config unchanged: const SUPPORT_EMAIL = "ava.agentveil@example.test"; const BUILD_HOST = "10.24.8.15";
+```
+
+Open the printed dashboard URL in the same clean window. The first request must
+show two protected lower-risk findings and `Synthetic wire proof: Passed`. The
+capturing fixture receives issued tokens rather than the email or private IPv4
+originals. It returns those tokens in a typed Responses stream. AgentVeil
+restores only the live `response.output_text.delta`, so Codex displays the
+original synthetic assignments without user-side token handling.
+
+All done/item/completion/response snapshot events remain tokenized on the wire.
+Only `response.output_text.delta` is restored. To demonstrate same-session
+replay, enter:
+
+```text
+Repeat the synthetic configuration exactly.
+```
+
+Codex replays the owned assistant tokens and also resends the earlier raw user
+prompt from its local thread. AgentVeil admits the exact tokens only for the
+same unexpired session, independently re-detects and re-tokenizes the prior raw
+values, and again restores only the live response delta. The dashboard should
+show `Protected history replayed` and note that prior values were re-protected.
+The capturing fixture still rejects either original on the wire. Stop if the
+dashboard is not explicitly labeled `Synthetic display restoration · model
+route loopback-only`, if an unknown token is accepted, or if the wire proof is
+not passed.
+
+Exit normally so AgentVeil can verify removal of the private runtime. A forced
+kill, terminal loss, process crash, or host crash can leave a resumable Codex
+thread containing the raw synthetic prompt and restored synthetic display in
+temporary state. This demo is never a safe place for real PII or credentials.
+
+## 4. Inspect the focused deterministic wire test
 
 This source-only test requires the public repository checkout and Rust
 toolchain. Archive users can skip to the live synthetic route after the
@@ -82,7 +155,9 @@ The single test proves all of the following in one process:
 1. A synthetic email/private IPv4 request succeeds.
 2. The fake upstream body contains typed AgentVeil replacements and does not
    contain the originals.
-3. Synthetic display restoration returns the originals locally.
+3. Full synthetic-harness restoration returns the originals in its supported
+   typed assistant display copies. This is broader than the Codex demo's
+   delta-only restoration and remains synthetic-only.
 4. A direct synthetic credential blocks with
    `protected_request_bytes_forwarded: 0`.
 5. Percent-encoded, Unicode-compatible, JSON-escaped, separator-composed,
@@ -107,7 +182,7 @@ Do not claim “zero leak” from a screenshot of rewritten JSON. The meaningful
 evidence is that the fake-upstream request count remains unchanged on every
 block/reject path and that its captured accepted bodies exclude originals.
 
-## 4. Run all verification tests
+## 5. Run all verification tests
 
 ```sh
 cargo fmt --check
@@ -115,12 +190,14 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked --all-targets
 ```
 
-The current build reports 42 passing Rust tests: 37 library, 3 CLI, 1
-offline-demo CLI, and 1 gateway integration test. Three Python regressions
-cover exact archive construction and inspection, release-report directory
-diagnostics, and descriptor cleanup.
+The current build reports 51 passing Rust tests: 43 library, 3 binary CLI, 2
+demo CLI integration, and 3 gateway end-to-end tests. Four Python regressions
+cover exact archive construction and inspection, tag/binary version mismatch
+rejection, release-report directory diagnostics, and descriptor cleanup. Bind
+these working-tree counts to the final clean release report before using them
+in a public artifact.
 
-## 5. Live synthetic Codex route
+## 6. Live synthetic Codex route
 
 This step contacts OpenAI using existing Codex login state. It demonstrates one
 dated live path only. Keep `--ephemeral` and use the synthetic fixture included
@@ -210,28 +287,41 @@ These audit checks confirm the dated route decision and audit-value invariant;
 they do not capture the OpenAI wire. The fake-upstream test remains the proof of
 what crossed the controlled egress boundary.
 
-## 6. What to show in a short video
+## 7. Killer-demo video plan
 
-A defensible sub-three-minute sequence is:
+Use one clean 16:9 window for the core shot: the AgentVeil dashboard above and
+the real Codex TUI below. No repository sidebar, unrelated task, auth state,
+personal path, token, mapping, request body, or audit body may be visible.
 
-1. **Problem (15 seconds):** Codex tool output can place sensitive-looking data
-   into a later model turn.
-2. **Boundary (20 seconds):** show the one-line route and state the exact
-   Codex/model/transport scope.
-3. **Deterministic proof (55 seconds):** run `agentveil demo --check`, then open
-   the offline dashboard and explain its capturing-upstream request-count
-   assertion.
-4. **Live proof (40 seconds):** run the fixture through `agentveil codex`, show
-   `TOKEN_ENV_EMPTY` and `WRAPPER_ROUTE_OK`, then run the quiet audit scan.
-5. **Evidence (25 seconds):** show the payload map, audit schema, 42-Rust-test
-   plus 3-release-script-test result, and fail-closed boundary.
-6. **Honest limits (15 seconds):** live restoration disabled; no IDE/cloud/
-   WebSocket/media/universal-DLP claim.
+A defensible 2:35 sequence is:
 
-The dashboard changes labels by mode: the offline proof shows its synthetic
-route, while live mode shows the configured Codex/OpenAI route and “Not
-measured.” Never treat displayed status as a substitute for the capturing-
-upstream assertion.
+1. **Problem (0:00-0:12):** useful coding context can contain personal data,
+   private infrastructure, and credentials.
+2. **Boundary (0:12-0:25):** launch `agentveil codex-demo`; show the real Codex
+   CLI, authenticated AgentVeil gateway, capturing synthetic loopback fixture,
+   and explicit `model route loopback-only` label.
+3. **One-shot transparent round trip (0:25-1:35):** with dashboard and TUI in
+   the same frame, type the exact first synthetic prompt. Show the value-free
+   activity update before Codex displays the exact synthetic assignments. Type
+   the replay prompt, show `Protected history replayed`, and show the same exact
+   local display again. Say plainly that only `response.output_text.delta` is
+   restored; completion/history snapshots stay tokenized.
+4. **Hard-block proof (1:35-1:55):** show the packaged synthetic credential
+   case as blocked with zero additional upstream requests. Credentials and
+   private keys are never tokenized, stored in the ledger, or restored.
+5. **Evidence and meaningful model use (1:55-2:28):** show the separate dated
+   live GPT-5.6 Luna marker as route evidence, then the final clean 51-Rust-test
+   plus 4-Python-regression result. Keep the live route's restoration disabled
+   and its wire proof `Not measured`.
+6. **Honest close (2:28-2:35):** public repository, exact verified scope,
+   synthetic fixtures only, and no universal-DLP claim.
+
+The interactive TUI is the only public shot that may show the two documented
+synthetic lower-risk originals. Automated check output, dashboard state, audit,
+and reports must remain value-free. If the dashboard reports `Synthetic wire
+proof: Failed`, an unknown token is accepted, any raw fixture reaches the
+capturing boundary, or cleanup does not verify the private root absent, discard
+the run. Never treat displayed status alone as wire evidence.
 
 ## Approved claim language
 

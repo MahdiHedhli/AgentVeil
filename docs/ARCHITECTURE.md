@@ -78,7 +78,7 @@ Exposed routes in the current build are deliberately small:
 |---|---|---|
 | `GET /health` | value-free local health metadata | loopback binding; no protected values |
 | `GET /dashboard` and local assets | read-only status UI | loopback, exact listener authority, embedded assets, CSP/no-store/nosniff and related headers; deliberately no browser credential |
-| `GET /dashboard/state` | value-free activity JSON | loopback, exact listener authority, closed schema, maximum 64 deduplicated activities; deliberately no browser credential |
+| `GET /dashboard/state` | value-free activity JSON | loopback, exact listener authority, versioned typed producer schema, maximum 64 deduplicated activities; deliberately no browser credential |
 | `GET /v1/models` | Codex model discovery | local credential, one Bearer header for live mode, fixed endpoint, one allowlisted query |
 | `POST /v1/responses` | protected model turn | local credential, live auth check, strict JSON/body rules, privacy engine, audit-before-egress |
 
@@ -95,8 +95,15 @@ DOM, cookie, or browser storage would create a secret-exposure risk. State is
 derived only from value-free audit events. Every dashboard request must present
 the listener's exact Host authority, which closes the browser DNS-rebinding path
 without introducing a browser credential. `wire_proof: synthetic_passed` is
-emitted only by the capturing loopback demo; live mode reports `not_measured`.
+emitted only by a capturing loopback demo; a failed boundary observation is
+sticky and reports `synthetic_failed`, while live mode reports `not_measured`.
 The capturing fake upstream, not a UI counter, remains the wire proof.
+
+Dashboard state remains value-free as the presentation evolves. Schema v2 adds
+the `client` discriminator and expands the restoration/wire-proof enum labels.
+Consumers must gate interpretation on `schema_version`, tolerate future unknown
+fields and labels, and never infer wire proof from `client`, `upstream`, or
+`restoration` alone.
 
 ### Payload adapter
 
@@ -187,9 +194,17 @@ enable response restoration with the live upstream.
 The synthetic-only restoration path buffers typed SSE frames, limits one frame
 to 1 MiB, restores only exact owned tokens in selected assistant display-text
 fields, and leaves tool arguments, commands, identifiers, and unrecognized
-events unchanged. Malformed, truncated, or unsupported typed text shapes fail
-the local stream. This path exists for deterministic proof, not as a live
-product claim.
+events unchanged. It has two explicit modes:
+
+- the full synthetic harness restores supported typed display deltas and
+  selected display snapshots for deterministic transformer coverage; and
+- the real-Codex synthetic demo restores only `response.output_text.delta`, so
+  done/item/completion/response snapshots remain tokenized for history and
+  replay.
+
+Malformed, truncated, or unsupported typed text shapes fail the local stream.
+Both modes require a loopback synthetic upstream; neither is a live product
+claim, and configuration rejects either mode with OpenAI.
 
 ## Trust boundaries
 

@@ -85,7 +85,8 @@ metadata fields.
 | Audit leaks originals/tokens/auth | value-free type schema; no body logging; private path modes | audit unit/file tests, gateway leak assertions, live audit scan | alternate unsafe parent path and surrounding host logging remain operator risks |
 | Audit fails after request protection | a pending event must flush before send; unhealthy state blocks future protected requests | code path and audit tests | disk failure after pending write can still leave only partial lifecycle evidence |
 | Redirect/proxy exfiltrates authenticated request | redirects disabled, environment proxies disabled, compile-time fixed URLs | code inspection | DNS/TLS/platform trust remains an external dependency |
-| Response restoration inserts original into command/tool argument | restoration allowlists typed display events; non-display events unchanged | SSE tests | live restoration is disabled because Codex transcript semantics remain unverified |
+| Response restoration inserts original into command/tool argument | restoration allowlists typed display events; Codex-compatible mode permits only `response.output_text.delta`; non-display events remain tokenized | SSE and gateway end-to-end tests | live restoration is disabled because Codex transcript semantics remain unverified |
+| Synthetic Codex display persists after the demo | private isolated `CODEX_HOME`; clean exit recursively deletes and verifies the entire root | real-Codex synthetic smoke and cleanup check | forced kill, terminal loss, process crash, or host crash can leave a resumable thread with the raw synthetic prompt and restored display |
 | Oversized request/SSE exhausts memory | policy body limit; 1 MiB incomplete SSE-frame cap; bounded views/ledger | unit/config validation | concurrent requests and accepted near-limit bodies still consume local resources |
 
 ## Fail-closed decisions
@@ -111,6 +112,12 @@ tool may already have printed those values to Codex or a terminal before the
 gateway sees the next model turn. The gateway prevents supported raw bytes from
 crossing its OpenAI request boundary; it does not erase or retroactively secure
 local copies.
+
+The interactive `codex-demo` intentionally exercises that local-data caveat
+with only the two documented lower-risk synthetic fixtures. Its Codex thread is
+resumable while running. AgentVeil verifies recursive deletion on clean exit,
+but forced termination can leave synthetic temporary state. Never substitute
+real PII or credentials.
 
 Likewise, a model can ask a shell command to upload data through another
 network path. AgentVeil does not sandbox or mediate tool network activity. Use

@@ -115,10 +115,19 @@ means a private-IP/internal-hostname token that reached the model remains a toke
 in the live response.
 
 Exact-token restoration is available only when the gateway is explicitly using
-an unauthenticated loopback synthetic upstream. It is limited to supported
-assistant display-text event fields and the originating session/TTL. AgentVeil
-refuses to enable it with the live upstream because restored originals might be
-stored in or replayed from local Codex transcripts.
+an unauthenticated loopback synthetic upstream. The full synthetic harness
+restores supported typed assistant display copies, including selected
+snapshots. The real-Codex synthetic demo is narrower and restores only
+`response.output_text.delta`; done/item/completion/response snapshots remain
+tokenized. Both require the originating session, an exact owned token, and an
+unexpired mapping. AgentVeil refuses either mode with the live upstream because
+restored originals might be stored in or replayed from local Codex transcripts.
+
+The interactive Codex TUI does keep a resumable thread in its private temporary
+`CODEX_HOME` while the demo runs. AgentVeil recursively deletes and verifies
+that isolated root on clean exit. A forced kill, terminal loss, process crash,
+or host crash can leave the raw synthetic prompt and restored synthetic display
+in temporary state, which is why this path must never use real PII or secrets.
 
 AgentVeil does not inspect live response text as a DLP boundary. If Codex later
 includes response or tool output in a supported outbound request, that next
@@ -144,8 +153,12 @@ the gateway capability to a browser would create a new credential surface. Do
 not port-forward or reverse-proxy the listener. Every dashboard request must
 use the listener's exact Host authority, limiting browser DNS rebinding without
 placing a capability in browser state. `wire_proof` is `synthetic_passed` only
-inside the capturing offline demo; live mode reports `not_measured`. Use the
-fake upstream, not UI state alone, for wire proof.
+inside a capturing synthetic demo; `synthetic_failed` is a sticky failure state,
+and live mode reports `not_measured`. Dashboard state is value-free. Schema v2
+adds the `client` discriminator and expanded restoration/wire-proof labels;
+consumers must gate interpretation on the version, tolerate future unknown
+fields and labels, and must not treat them as independent wire evidence. Use
+the fake upstream, not UI state alone, for wire proof.
 
 ## Deletion
 

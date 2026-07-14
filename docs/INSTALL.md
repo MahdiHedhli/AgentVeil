@@ -94,8 +94,12 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked --all-targets
 ```
 
-The current build passes 42 tests. The gateway integration test and offline
-demo are fully local and synthetic; neither contacts OpenAI.
+The current build passes 51 Rust tests: 43 library, 3 binary CLI, 2 demo CLI
+integration, and 3 gateway end-to-end tests. Four additional Python
+regressions exercise archive construction, release-version consistency, report
+path failures, and descriptor cleanup. The gateway end-to-end tests and
+offline demos are fully local and synthetic; none contacts OpenAI. Re-run and
+bind these counts to the final clean commit before publishing a new tag.
 
 Before using live login state, run the packaged proof:
 
@@ -137,6 +141,35 @@ value-free view. Do not port-forward or reverse-proxy the listener.
 Use synthetic content only. This build is not approved for real credentials or
 personal/customer records.
 
+## Start the isolated synthetic Codex round trip
+
+To run the real pinned Codex CLI against AgentVeil's capturing loopback fixture:
+
+```sh
+./target/release/agentveil codex-demo --check
+./target/release/agentveil codex-demo
+```
+
+The `--check` form uses a synthetic client to exercise the Codex-compatible
+request/stream contract; it does not launch Codex and emits only value-free
+evidence. The interactive form requires no Codex login and keeps its model
+route loopback-only, so it sends no model request to OpenAI. This is not a
+categorical no-network claim about the Codex process. It
+creates a private temporary `CODEX_HOME` and synthetic-only workspace. The TUI
+keeps a resumable thread there while it runs; this is not an ephemeral Codex
+session. AgentVeil recursively removes the entire runtime and verifies its
+absence on clean exit. The demo policy tokenizes the known-fake email and
+private IPv4 fixtures. AgentVeil transforms exact owned tokens only in
+`response.output_text.delta`; done/item/completion/response snapshots stay
+tokenized on the wire. Open the printed dashboard URL locally to see the
+value-free route, wire-proof, activity, and restoration state. Only the Codex
+TUI intentionally displays the documented synthetic originals.
+
+Never substitute real personal data. `codex-demo` is a bounded evidence mode,
+not permission to enable restoration on the live OpenAI route. A forced kill
+or host crash can leave the resumable thread, raw synthetic prompt, and
+restored synthetic display in temporary state behind.
+
 ## Audit-path guidance
 
 Choose a local directory controlled by the current user and outside shared,
@@ -160,7 +193,9 @@ history or process tooling; use `agentveil codex` for the supported live path.
 
 `--test-upstream` accepts only an unauthenticated loopback HTTP URL.
 `--restore-display-text` requires that synthetic upstream. The gateway refuses
-demo policy or restoration with live OpenAI.
+demo policy or restoration with live OpenAI. That lower-level test option uses
+full synthetic display restoration for supported typed assistant display
+copies; `codex-demo` instead selects the narrower delta-only mode.
 
 ## Troubleshooting
 
