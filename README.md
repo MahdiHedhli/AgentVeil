@@ -16,7 +16,7 @@ credential classes, and masks or tokenizes configured lower-risk values.
 ## Evidence snapshot
 
 The core route claims were first anchored on July 14, 2026. Public release
-`v0.1.4` is the baseline judge artifact. Candidate `v0.1.5` adds a
+`v0.1.4` is the baseline judge artifact. Candidate `v0.1.6` adds a
 real-Codex, synthetic-loopback presentation path; its evidence must be rebound
 to the final clean commit before the next tag is published.
 

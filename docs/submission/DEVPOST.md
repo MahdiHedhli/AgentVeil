@@ -1,6 +1,6 @@
 # AgentVeil — Devpost draft
 
-> Draft basis: candidate `v0.1.5`, with public `v0.1.4` as the baseline
+> Draft basis: candidate `v0.1.6`, with public `v0.1.4` as the baseline
 > judge artifact. Replace the release link and revalidate every count and claim
 > against the final clean release report before submission.
 

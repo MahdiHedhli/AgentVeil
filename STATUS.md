@@ -1,7 +1,7 @@
 # AgentVeil status
 
 Core evidence was first anchored on July 14, 2026. Public release `v0.1.4` is
-the baseline judge artifact. Candidate `v0.1.5` adds the real-Codex
+the baseline judge artifact. Candidate `v0.1.6` adds the real-Codex
 synthetic-loopback demonstration and its narrower delta-only restoration path.
 Generated release reports bind results to an exact Git commit and clean-tree
 observations; the working-tree claims below require a fresh report before the
@@ -34,9 +34,9 @@ the replacement video, and completing the Devpost submission remain.
 | Full synthetic-harness display restoration | Verified in tests | supported typed display snapshots, every transport split, unsupported sink preservation, malformed/truncated rejection |
 | Codex synthetic delta-only restoration | Verified in tests and interactive smoke | only `response.output_text.delta` is restored; done/item/completion/response snapshots stay tokenized; exact-token replay remains session/TTL scoped |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Verified in candidate `v0.1.5` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; state schema v2 adds client plus expanded restoration/wire-proof labels; synthetic proof state only in a capturing harness |
-| Packaged offline demo | Verified in candidate `v0.1.5`; release binding pending | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
-| Interactive real-Codex synthetic demo | Verified in candidate `v0.1.5`; release binding pending | real pinned TUI, model route loopback-only, no model request to OpenAI; TUI state is resumable while running, deleted and verified absent on clean exit, with forced-kill/crash residue explicitly disclosed |
+| Dashboard | Verified in candidate `v0.1.6` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; state schema v2 adds client plus expanded restoration/wire-proof labels; synthetic proof state only in a capturing harness |
+| Packaged offline demo | Verified in candidate `v0.1.6`; release binding pending | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Interactive real-Codex synthetic demo | Verified in candidate `v0.1.6`; release binding pending | real pinned TUI, model route loopback-only, no model request to OpenAI; TUI state is resumable while running, deleted and verified absent on clean exit, with forced-kill/crash residue explicitly disclosed |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result
