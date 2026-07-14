@@ -1,11 +1,10 @@
 # AgentVeil status
 
-Core evidence was first anchored on July 14, 2026. The current public release
-includes the offline demo, value-free loopback dashboard, hardened audit sink,
-benchmark, self-contained judge documentation, and stronger release evidence.
-Generated release reports bind their results to the exact Git commit and
-clean-tree observations; they remain private, value-free local evidence rather
-than committed runtime state.
+Core evidence was first anchored on July 14, 2026. Release `v0.1.4` includes
+the offline demo, value-free loopback dashboard, hardened audit sink, benchmark,
+release evidence, and the synthetic fixture required by its standalone judge
+archive. Generated release reports bind their results to the exact Git commit
+and clean-tree observations.
 
 ## Current state
 
@@ -15,9 +14,9 @@ offline demo, benchmark harness, and one live synthetic GPT-5.6 Luna
 tool-replay proof are working. Live restoration remains disabled. The read-only
 dashboard passed desktop browser QA and responsive mobile DOM/overflow checks.
 The clean release/leak gate, default benchmark, renewed fake-upstream proof, and
-renewed live synthetic proof passed on the current release. Prebuilt Ubuntu
-x86_64 and macOS arm64 artifacts are public and checksum-verified. Recording
-the video, running `/feedback`, and completing the Devpost submission remain.
+renewed live synthetic proof passed for release `v0.1.4`. Its prebuilt Ubuntu
+x86_64 and macOS arm64 archives are checksum-verified. Final video review and
+upload, running `/feedback`, and completing the Devpost submission remain.
 
 ## Claim matrix
 
@@ -33,8 +32,8 @@ the video, running `/feedback`, and completing the Devpost submission remain.
 | Session/TTL/capacity token scope | Verified in unit tests | exact lookup, cross-scope denial, expiry, LRU, clear, hard-secret denial |
 | Synthetic SSE display restoration | Verified in tests | every transport split, unsupported sink preservation, malformed/truncated rejection |
 | Live OpenAI display restoration | Disabled / not claimed | configuration rejects restoration with the live upstream |
-| Dashboard | Verified in current release | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
-| Packaged offline demo | Verified in current release | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
+| Dashboard | Verified in release `v0.1.4` | loopback/read-only/value-free, exact Host authority, local assets, restrictive browser headers, browser QA; synthetic proof state only in the capturing harness |
+| Packaged offline demo | Verified in release `v0.1.4` | isolated environment test runs twice; hard block keeps fake-upstream count unchanged; rewritten bodies, tool re-entry, dashboard, and audit are value-free |
 | Universal Codex protection | Not claimed | only the mapped CLI `0.144.4` Responses path is supported |
 
 ## Verification result
@@ -49,8 +48,9 @@ the video, running `/feedback`, and completing the Devpost submission remain.
 42 total; 0 failed
 ```
 
-Two focused Python regression tests also cover release-report directory error
-classification and descriptor cleanup on benchmark validation failures.
+Three focused Python regression tests cover exact archive construction and
+inspection, release-report directory error classification, and descriptor
+cleanup on benchmark validation failures.
 
 The gateway integration test uses only loopback listeners and synthetic
 fixtures. It verifies:
@@ -67,11 +67,18 @@ fixtures. It verifies:
 ## Live proof boundary
 
 A renewed synthetic run on July 14, 2026 used the secure launcher, Codex CLI
-`0.144.4`, and `gpt-5.6-luna`. A local tool read a fixture containing a synthetic
-email, private IP, and project label. The next model turn returned the expected
-route marker. The gateway audit contained two rewritten events and contained
-none of the originals or AgentVeil tokens. The child shell observed the
-AgentVeil session environment variable as empty.
+`0.144.4`, and `gpt-5.6-luna`. A local tool returned a synthetic email and
+private IP in a supported output field. The next model turn returned the
+expected route marker, and the gateway audit recorded two lifecycle rows for
+the rewritten request without storing body values or AgentVeil tokens. The
+child shell observed the AgentVeil session environment variable as empty.
+
+The project label in the fixture is configured only by the loopback-only demo
+policy, not the live default policy. The recommended live command therefore
+prints the email and private-IP lines plus `TOKEN_ENV_EMPTY`;
+`TOKEN_ENV_PRESENT` is a failure signal. Audit metadata demonstrates the dated
+route decision, not what crossed the remote wire; the capturing fake-upstream
+test remains the egress proof.
 
 This proves one dated live path, not every Codex workflow or future CLI version.
 

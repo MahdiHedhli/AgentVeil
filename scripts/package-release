@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""Build and verify an exact, checksummed AgentVeil release archive."""
+
+from __future__ import annotations
+
+import argparse
+import gzip
+import hashlib
+import os
+import re
+import shutil
+import stat
+import sys
+import tarfile
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Final
+
+
+SCRIPT_PATH: Final = Path(__file__).resolve()
+REPO_ROOT: Final = SCRIPT_PATH.parent.parent
+SUPPORTED_PLATFORMS: Final = frozenset({"linux-x86_64", "macos-arm64"})
+TAG_PATTERN: Final = re.compile(
+    r"^v(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})$"
+)
+FIXTURE_PATH: Final = "fixtures/demo/synthetic-context.txt"
+FIXTURE_SHA256: Final = (
+    "6d6e4246fcdfe0c19f19f696e8c64ed1432c58665718b28269ca61a8a69cc735"
+)
+DIRECTORY_MODE: Final = 0o755
+DATA_MODE: Final = 0o644
+EXECUTABLE_MODE: Final = 0o755
+COPY_BUFFER_BYTES: Final = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class FileSpec:
+    source: str
+    destination: str
+    mode: int = DATA_MODE
+
+
+@dataclass(frozen=True, order=True)
+class ManifestEntry:
+    name: str
+    kind: str
+    mode: int
+
+
+PACKAGE_FILES: Final = (
+    FileSpec("LICENSE", "LICENSE"),
+    FileSpec("NOTICE", "NOTICE"),
+    FileSpec("README.md", "README.md"),
+    FileSpec("SECURITY.md", "SECURITY.md"),
+    FileSpec("STATUS.md", "STATUS.md"),
+    FileSpec("docs/JUDGE_TEST.md", "JUDGE_TEST.md"),
+    FileSpec("docs/ARCHITECTURE.md", "docs/ARCHITECTURE.md"),
+    FileSpec("docs/DEMO.md", "docs/DEMO.md"),
+    FileSpec("docs/DONOR_ATTRIBUTION.md", "docs/DONOR_ATTRIBUTION.md"),
+    FileSpec("docs/INSTALL.md", "docs/INSTALL.md"),
+    FileSpec("docs/JUDGE_TEST.md", "docs/JUDGE_TEST.md"),
+    FileSpec("docs/LIMITATIONS.md", "docs/LIMITATIONS.md"),
+    FileSpec("docs/PAYLOAD_MAP.md", "docs/PAYLOAD_MAP.md"),
+    FileSpec("docs/PRIVACY.md", "docs/PRIVACY.md"),
+    FileSpec("docs/RISK_REGISTER.md", "docs/RISK_REGISTER.md"),
+    FileSpec("docs/SECURITY_INVARIANTS.md", "docs/SECURITY_INVARIANTS.md"),
+    FileSpec("docs/THREAT_MODEL.md", "docs/THREAT_MODEL.md"),
+    FileSpec(FIXTURE_PATH, FIXTURE_PATH),
+    FileSpec("policies/default.yaml", "policies/default.yaml"),
+    FileSpec("policies/demo.yaml", "policies/demo.yaml"),
+    FileSpec("policies/strict.yaml", "policies/strict.yaml"),
+)
+BINARY_SPEC: Final = FileSpec("", "agentveil", EXECUTABLE_MODE)
+
+
+class PackageError(Exception):
+    """A fail-closed packaging error with a value-free reason code."""
+
+
+def open_regular(
+    path: Path, *, executable: bool = False, allow_source_hardlink: bool = False
+) -> BinaryIO:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise PackageError("source_open_failed") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PackageError("source_not_regular_file")
+        if metadata.st_nlink != 1 and not (
+            allow_source_hardlink and metadata.st_nlink == 2
+        ):
+            raise PackageError("source_not_exclusive_regular_file")
+        if executable and metadata.st_mode & 0o111 == 0:
+            raise PackageError("binary_not_executable")
+        return os.fdopen(descriptor, "rb", closefd=True)
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def sha256_stream(stream: BinaryIO) -> str:
+    digest = hashlib.sha256()
+    while chunk := stream.read(COPY_BUFFER_BYTES):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_regular(path: Path) -> str:
+    with open_regular(path) as stream:
+        return sha256_stream(stream)
+
+
+def verify_pinned_fixture(path: Path) -> None:
+    if sha256_regular(path) != FIXTURE_SHA256:
+        raise PackageError("fixture_hash_mismatch")
+
+
+def write_exclusive(path: Path, content: bytes, mode: int) -> None:
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        raise PackageError("destination_create_failed") from error
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def copy_regular(
+    source: Path,
+    destination: Path,
+    mode: int,
+    *,
+    executable: bool = False,
+    allow_source_hardlink: bool = False,
+) -> None:
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        destination_descriptor = os.open(destination, flags, mode)
+    except OSError as error:
+        raise PackageError("destination_create_failed") from error
+    failed = False
+    try:
+        os.fchmod(destination_descriptor, mode)
+        with open_regular(
+            source,
+            executable=executable,
+            allow_source_hardlink=allow_source_hardlink,
+        ) as source_stream:
+            with os.fdopen(
+                destination_descriptor, "wb", closefd=False
+            ) as destination_stream:
+                shutil.copyfileobj(
+                    source_stream, destination_stream, COPY_BUFFER_BYTES
+                )
+                destination_stream.flush()
+                os.fsync(destination_descriptor)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        os.close(destination_descriptor)
+        if failed:
+            try:
+                destination.unlink()
+            except OSError:
+                pass
+
+
+def relative_directories() -> tuple[str, ...]:
+    directories: set[str] = set()
+    for spec in (*PACKAGE_FILES, BINARY_SPEC):
+        parent = PurePosixPath(spec.destination).parent
+        while str(parent) != ".":
+            directories.add(parent.as_posix())
+            parent = parent.parent
+    return tuple(sorted(directories, key=lambda value: (value.count("/"), value)))
+
+
+def expected_manifest(package_name: str) -> tuple[ManifestEntry, ...]:
+    entries = [ManifestEntry(package_name, "directory", DIRECTORY_MODE)]
+    entries.extend(
+        ManifestEntry(f"{package_name}/{directory}", "directory", DIRECTORY_MODE)
+        for directory in relative_directories()
+    )
+    entries.extend(
+        ManifestEntry(f"{package_name}/{spec.destination}", "file", spec.mode)
+        for spec in (*PACKAGE_FILES, BINARY_SPEC)
+    )
+    return tuple(sorted(entries))
+
+
+def stage_files(stage_root: Path, binary: Path) -> None:
+    stage_root.mkdir(mode=DIRECTORY_MODE)
+    os.chmod(stage_root, DIRECTORY_MODE)
+    for directory in relative_directories():
+        destination = stage_root / Path(directory)
+        destination.mkdir(mode=DIRECTORY_MODE)
+        os.chmod(destination, DIRECTORY_MODE)
+    for spec in PACKAGE_FILES:
+        copy_regular(REPO_ROOT / spec.source, stage_root / spec.destination, spec.mode)
+    # Cargo's Linux `link_or_copy` path normally gives this trusted build output
+    # a second hard link. Read that binary snapshot without following symlinks,
+    # then restore the single-link invariant in our private stage.
+    copy_regular(
+        binary,
+        stage_root / BINARY_SPEC.destination,
+        BINARY_SPEC.mode,
+        executable=True,
+        allow_source_hardlink=True,
+    )
+
+
+def validate_stage(stage_root: Path) -> None:
+    expected_files = {spec.destination: spec.mode for spec in (*PACKAGE_FILES, BINARY_SPEC)}
+    expected_directories = set(relative_directories())
+    actual_files: dict[str, int] = {}
+    actual_directories: set[str] = set()
+    for root, directories, files in os.walk(stage_root, followlinks=False):
+        root_path = Path(root)
+        for directory in directories:
+            path = root_path / directory
+            metadata = path.lstat()
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise PackageError("stage_non_directory")
+            relative = path.relative_to(stage_root).as_posix()
+            actual_directories.add(relative)
+            if stat.S_IMODE(metadata.st_mode) != DIRECTORY_MODE:
+                raise PackageError("stage_directory_mode_mismatch")
+        for filename in files:
+            path = root_path / filename
+            metadata = path.lstat()
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise PackageError("stage_non_exclusive_regular_file")
+            relative = path.relative_to(stage_root).as_posix()
+            actual_files[relative] = stat.S_IMODE(metadata.st_mode)
+    if actual_directories != expected_directories or actual_files != expected_files:
+        raise PackageError("stage_manifest_mismatch")
+
+
+def add_tar_entry(
+    archive: tarfile.TarFile,
+    entry: ManifestEntry,
+    stage_root: Path,
+    package_name: str,
+) -> None:
+    archive_name = entry.name + ("/" if entry.kind == "directory" else "")
+    info = tarfile.TarInfo(archive_name)
+    info.mode = entry.mode
+    info.uid = 0
+    info.gid = 0
+    info.uname = ""
+    info.gname = ""
+    info.mtime = 0
+    info.pax_headers = {}
+    if entry.kind == "directory":
+        info.type = tarfile.DIRTYPE
+        info.size = 0
+        archive.addfile(info)
+        return
+    relative = PurePosixPath(entry.name).relative_to(package_name).as_posix()
+    path = stage_root / relative
+    with open_regular(path, executable=relative == BINARY_SPEC.destination) as stream:
+        metadata = os.fstat(stream.fileno())
+        info.type = tarfile.REGTYPE
+        info.size = metadata.st_size
+        archive.addfile(info, stream)
+
+
+def build_archive(stage_root: Path, package_name: str, archive_path: Path) -> None:
+    try:
+        raw_descriptor = os.open(
+            archive_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+            DATA_MODE,
+        )
+    except OSError as error:
+        raise PackageError("archive_create_failed") from error
+    try:
+        os.fchmod(raw_descriptor, DATA_MODE)
+        with os.fdopen(raw_descriptor, "wb", closefd=False) as raw_stream:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw_stream, mtime=0) as gzip_stream:
+                with tarfile.open(
+                    fileobj=gzip_stream, mode="w", format=tarfile.USTAR_FORMAT
+                ) as archive:
+                    for entry in expected_manifest(package_name):
+                        add_tar_entry(archive, entry, stage_root, package_name)
+            raw_stream.flush()
+            os.fsync(raw_descriptor)
+    except (OSError, tarfile.TarError, ValueError) as error:
+        raise PackageError("archive_build_failed") from error
+    finally:
+        os.close(raw_descriptor)
+
+
+def archive_manifest(archive_path: Path) -> tuple[ManifestEntry, ...]:
+    entries: list[ManifestEntry] = []
+    seen: set[str] = set()
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            for member in archive.getmembers():
+                name = member.name.rstrip("/")
+                path = PurePosixPath(name)
+                if path.is_absolute() or ".." in path.parts or name in seen:
+                    raise PackageError("archive_unsafe_member")
+                seen.add(name)
+                if member.isdir():
+                    kind = "directory"
+                elif member.isreg() and not member.issym() and not member.islnk():
+                    kind = "file"
+                else:
+                    raise PackageError("archive_unsupported_member_type")
+                if member.uid != 0 or member.gid != 0 or member.mtime != 0:
+                    raise PackageError("archive_metadata_mismatch")
+                entries.append(ManifestEntry(name, kind, stat.S_IMODE(member.mode)))
+    except (OSError, tarfile.TarError) as error:
+        raise PackageError("archive_read_failed") from error
+    return tuple(entries)
+
+
+def validate_archive(archive_path: Path, package_name: str) -> None:
+    if archive_manifest(archive_path) != expected_manifest(package_name):
+        raise PackageError("archive_manifest_mismatch")
+    fixture_member = f"{package_name}/{FIXTURE_PATH}"
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            stream = archive.extractfile(fixture_member)
+            if stream is None or sha256_stream(stream) != FIXTURE_SHA256:
+                raise PackageError("archive_fixture_hash_mismatch")
+    except (KeyError, OSError, tarfile.TarError) as error:
+        raise PackageError("archive_fixture_read_failed") from error
+
+
+def ensure_output_directory(output_dir: Path) -> None:
+    try:
+        output_dir.mkdir(mode=0o755)
+    except FileExistsError:
+        pass
+    except OSError as error:
+        raise PackageError("output_directory_create_failed") from error
+    try:
+        metadata = output_dir.lstat()
+    except OSError as error:
+        raise PackageError("output_directory_unavailable") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise PackageError("output_directory_unsafe")
+
+
+def publish_outputs(staged: tuple[Path, Path], final: tuple[Path, Path]) -> None:
+    if len(staged) != len(final):
+        raise PackageError("output_manifest_mismatch")
+    created: list[Path] = []
+    try:
+        for source, destination in zip(staged, final):
+            copy_regular(source, destination, DATA_MODE)
+            created.append(destination)
+    except Exception:
+        for path in created:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def package_release(
+    *, tag: str, platform: str, binary: Path, output_dir: Path
+) -> tuple[Path, Path]:
+    if not TAG_PATTERN.fullmatch(tag):
+        raise PackageError("invalid_tag")
+    if platform not in SUPPORTED_PLATFORMS:
+        raise PackageError("unsupported_platform")
+    verify_pinned_fixture(REPO_ROOT / FIXTURE_PATH)
+    ensure_output_directory(output_dir)
+    package_name = f"agentveil-{tag}-{platform}"
+    archive_name = f"{package_name}.tar.gz"
+    checksum_name = f"{archive_name}.sha256"
+    final_archive = output_dir / archive_name
+    final_checksum = output_dir / checksum_name
+    if final_archive.exists() or final_checksum.exists():
+        raise PackageError("output_exists")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".agentveil-package-", dir=output_dir) as temporary:
+            temporary_path = Path(temporary)
+            if stat.S_IMODE(temporary_path.stat().st_mode) != 0o700:
+                raise PackageError("staging_directory_mode_mismatch")
+            stage_root = temporary_path / package_name
+            stage_files(stage_root, binary)
+            validate_stage(stage_root)
+            staged_archive = temporary_path / archive_name
+            staged_checksum = temporary_path / checksum_name
+            build_archive(stage_root, package_name, staged_archive)
+            validate_archive(staged_archive, package_name)
+            archive_digest = sha256_regular(staged_archive)
+            write_exclusive(
+                staged_checksum,
+                f"{archive_digest}  {archive_name}\n".encode("ascii"),
+                DATA_MODE,
+            )
+            publish_outputs(
+                (staged_archive, staged_checksum),
+                (final_archive, final_checksum),
+            )
+    except PackageError:
+        raise
+    except OSError as error:
+        raise PackageError("packaging_filesystem_failure") from error
+    return final_archive, final_checksum
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--platform", required=True, choices=sorted(SUPPORTED_PLATFORMS))
+    parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=Path("dist"))
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        archive, _ = package_release(
+            tag=args.tag,
+            platform=args.platform,
+            binary=args.binary,
+            output_dir=args.output_dir,
+        )
+    except PackageError as error:
+        print(f"package-release: status=fail reason={error}", file=sys.stderr)
+        return 1
+    print(f"package-release: status=pass asset={archive.name} manifest=exact")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

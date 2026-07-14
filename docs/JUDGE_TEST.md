@@ -1,6 +1,6 @@
 # Judge test path
 
-The public GitHub release provides prebuilt, SHA-256-checksummed archives. The
+The tagged GitHub release provides prebuilt, SHA-256-checksummed archives. The
 offline proof needs no Codex installation, login, API key, source build, or
 network access after download.
 
@@ -14,10 +14,10 @@ Codex CLI exactly `0.144.4`. The offline proof is the recommended judge path.
 
 ## Linux x86_64
 
-Replace `v0.1.1` only if the submission points to a newer release:
+Replace `v0.1.4` only if the submission points to a newer release:
 
 ```sh
-tag=v0.1.1
+tag=v0.1.4
 asset="agentveil-${tag}-linux-x86_64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"
@@ -30,7 +30,7 @@ tar -xzf "$asset"
 ## macOS arm64
 
 ```sh
-tag=v0.1.1
+tag=v0.1.4
 asset="agentveil-${tag}-macos-arm64.tar.gz"
 base="https://github.com/MahdiHedhli/AgentVeil/releases/download/${tag}"
 curl --fail --location --remote-name "${base}/${asset}"

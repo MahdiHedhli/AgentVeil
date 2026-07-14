@@ -15,11 +15,10 @@ credential classes, and masks or tokenizes configured lower-risk values.
 
 ## Evidence snapshot
 
-The core route claims were first anchored on July 14, 2026. The current public
-release includes the deterministic offline demo, value-free dashboard,
-hardened audit sink, benchmark harness, self-contained judge documentation,
-and release evidence gates. Generated release reports record the exact commit
-and clean-tree state.
+The core route claims were first anchored on July 14, 2026. Release `v0.1.4`
+includes the deterministic offline demo, value-free dashboard, hardened audit
+sink, benchmark harness, release evidence gates, and a self-contained judge
+archive with its synthetic live-route fixture.
 
 - The secure launcher routes Codex CLI `0.144.4` and `gpt-5.6-luna` through an
   ephemeral loopback provider without changing persistent Codex configuration.
@@ -38,17 +37,18 @@ and clean-tree state.
 - Audit records contain typed metadata rather than body values, mappings,
   tokens, authorization material, or response text. Audit persistence is a
   pre-egress gate for protected Responses requests.
-- A synthetic live run exercised Codex tool output on a next GPT-5.6 Luna turn;
-  the raw synthetic email, private IP, project label, and AgentVeil tokens were
-  absent from its audit file.
+- A synthetic live run exercised Codex tool output on a next GPT-5.6 Luna turn.
+  The audit recorded metadata for rewritten email and private-IPv4 findings,
+  without body values or tokens. This is route evidence; the capturing
+  fake-upstream demo remains the wire-boundary proof.
 - The read-only dashboard serves only typed enforcement metadata from loopback,
   requires the exact loopback authority on every dashboard request, uses local
   assets and restrictive browser headers, and exposes no browser credential.
   Its synthetic proof state is set only by the capturing demo harness.
-- `cargo test --locked --all-targets` passes 42 tests: 37 library tests, 3
-  launcher tests, 1 offline-demo CLI test, and 1 gateway wire-level integration
-  test. Two focused Python regressions cover release-report directory failure
-  handling.
+- Release `v0.1.4` passes 42 Rust tests: 37 library tests, 3 launcher tests, 1
+  offline-demo CLI test, and 1 gateway wire-level integration test. Three
+  focused Python regressions cover exact archive packaging, report-directory
+  failure handling, and descriptor cleanup.
 
 Live OpenAI response restoration is deliberately disabled. Exact-token
 restoration exists only for the loopback synthetic-test mode while local Codex
