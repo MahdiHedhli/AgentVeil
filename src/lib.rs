@@ -7,11 +7,14 @@
 #![forbid(unsafe_code)]
 
 pub mod audit;
+pub mod audit_sink;
 pub mod detector;
 pub mod domain;
 pub mod engine;
+pub mod gateway;
 pub mod ledger;
 pub mod payload;
 pub mod policy;
+pub mod sse;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

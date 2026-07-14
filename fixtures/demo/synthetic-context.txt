@@ -1,0 +1,4 @@
+SYNTHETIC DEMO DATA — NOT REAL CUSTOMER OR INFRASTRUCTURE INFORMATION
+Customer contact: ava.agentveil@example.test
+Internal build host: 10.24.8.15
+Project label: PROJECT-VEIL-DEMO

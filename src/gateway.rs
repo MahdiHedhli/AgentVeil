@@ -1,0 +1,798 @@
+use std::io;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use async_stream::stream;
+use axum::Router;
+use axum::body::{Body, Bytes};
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::header::{CONTENT_ENCODING, CONTENT_TYPE};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use futures_util::StreamExt;
+use reqwest::Url;
+use serde::Serialize;
+use subtle::ConstantTimeEq;
+use thiserror::Error;
+use tokio::sync::Mutex;
+use zeroize::Zeroizing;
+
+use crate::VERSION;
+use crate::audit::{AuditDecision, AuditEvent, AuditFinding, UpstreamOutcome};
+use crate::audit_sink::{AuditSink, AuditSinkError};
+use crate::engine::{
+    EngineError, ForwardDecision, PrivacyEngine, ProtectionOutcome, ProtectionSummary,
+};
+use crate::ledger::SessionScope;
+use crate::policy::ValidatedPolicy;
+use crate::sse::SseTransformer;
+
+const LOCAL_SESSION_HEADER: &str = "x-agentveil-session";
+const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const CHATGPT_MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
+const API_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+const API_MODELS_URL: &str = "https://api.openai.com/v1/models";
+
+pub struct GatewayConfig {
+    pub bind: SocketAddr,
+    pub policy: ValidatedPolicy,
+    pub scope: SessionScope,
+    pub local_session_token: Zeroizing<String>,
+    pub audit_path: PathBuf,
+    pub upstream: UpstreamMode,
+    pub restore_display_text: bool,
+}
+
+#[derive(Clone)]
+pub enum UpstreamMode {
+    OpenAi,
+    LoopbackTest(Url),
+}
+
+impl UpstreamMode {
+    pub fn loopback_test(url: Url) -> Result<Self, GatewayError> {
+        if url.scheme() != "http"
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(GatewayError::UnsafeTestUpstream);
+        }
+        let host = url.host_str().ok_or(GatewayError::UnsafeTestUpstream)?;
+        let address: IpAddr = host.parse().map_err(|_| GatewayError::UnsafeTestUpstream)?;
+        if !address.is_loopback() {
+            return Err(GatewayError::UnsafeTestUpstream);
+        }
+        Ok(Self::LoopbackTest(url))
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::LoopbackTest(_) => "loopback_test",
+        }
+    }
+}
+
+struct GatewayState {
+    engine: Mutex<PrivacyEngine>,
+    client: reqwest::Client,
+    scope: SessionScope,
+    expected_local_token: Zeroizing<String>,
+    upstream: UpstreamMode,
+    restore_display_text: bool,
+    audit: AuditSink,
+    audit_healthy: AtomicBool,
+    session_pseudonym: String,
+    policy_name: String,
+    policy_hash: String,
+    started: Instant,
+    request_sequence: AtomicU64,
+}
+
+pub async fn serve(config: GatewayConfig) -> Result<(), GatewayError> {
+    let bind = config.bind;
+    let app = build_router(config)?;
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .map_err(|_| GatewayError::Bind)?;
+    tracing::info!(
+        address = %bind,
+        transport = "responses_sse",
+        "AgentVeil gateway ready"
+    );
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .map_err(|_| GatewayError::Serve)
+}
+
+pub fn build_router(config: GatewayConfig) -> Result<Router, GatewayError> {
+    if !config.bind.ip().is_loopback() {
+        return Err(GatewayError::NonLoopbackBind);
+    }
+    if !(32..=128).contains(&config.local_session_token.len())
+        || !config
+            .local_session_token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric())
+    {
+        return Err(GatewayError::InvalidLocalSessionToken);
+    }
+    if config.restore_display_text && matches!(config.upstream, UpstreamMode::OpenAi) {
+        return Err(GatewayError::LiveRestorationNotVerified);
+    }
+
+    let max_request_bytes = config.policy.defaults().max_request_bytes;
+    let session_pseudonym = pseudonym(&config.scope);
+    let policy_name = config.policy.name().to_string();
+    let policy_hash = config.policy.hash().to_string();
+    let state = Arc::new(GatewayState {
+        engine: Mutex::new(PrivacyEngine::new(config.policy)?),
+        client: reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|_| GatewayError::HttpClient)?,
+        scope: config.scope,
+        expected_local_token: config.local_session_token,
+        upstream: config.upstream,
+        restore_display_text: config.restore_display_text,
+        audit: AuditSink::open(&config.audit_path)?,
+        audit_healthy: AtomicBool::new(true),
+        session_pseudonym,
+        policy_name,
+        policy_hash,
+        started: Instant::now(),
+        request_sequence: AtomicU64::new(0),
+    });
+    Ok(Router::new()
+        .route("/health", get(health))
+        .route("/v1/models", get(models))
+        .route("/v1/responses", post(responses))
+        .fallback(not_found)
+        .layer(DefaultBodyLimit::max(max_request_bytes))
+        .with_state(state))
+}
+
+async fn health(State(state): State<Arc<GatewayState>>) -> impl IntoResponse {
+    axum::Json(HealthResponse {
+        status: "ok",
+        binding: "loopback",
+        transport: "responses_sse",
+        upstream: state.upstream.label(),
+        restoration: if state.restore_display_text {
+            "synthetic_display_only"
+        } else {
+            "disabled"
+        },
+        audit_healthy: state.audit_healthy.load(Ordering::Relaxed),
+    })
+}
+
+async fn models(State(state): State<Arc<GatewayState>>, headers: HeaderMap, uri: Uri) -> Response {
+    if !authorized(&state, &headers) {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "agentveil_unauthorized",
+            "AgentVeil rejected the local client.",
+            None,
+            None,
+        );
+    }
+    let query = match validated_models_query(uri.query()) {
+        Ok(query) => query,
+        Err(()) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "agentveil_invalid_models_query",
+                "AgentVeil rejected an unsupported model-discovery query.",
+                None,
+                None,
+            );
+        }
+    };
+    let target = match upstream_url(&state.upstream, &headers, Route::Models, query) {
+        Ok(target) => target,
+        Err(_) => {
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "agentveil_upstream_configuration",
+                "AgentVeil could not select the fixed upstream.",
+                None,
+                None,
+            );
+        }
+    };
+    let forwarded = forward_request_headers(&headers, &state.upstream, false);
+    match state.client.get(target).headers(forwarded).send().await {
+        Ok(upstream) => relay_upstream(upstream, None),
+        Err(_) => error_response(
+            StatusCode::BAD_GATEWAY,
+            "agentveil_upstream_unavailable",
+            "AgentVeil could not reach model discovery.",
+            None,
+            None,
+        ),
+    }
+}
+
+async fn responses(
+    State(state): State<Arc<GatewayState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !authorized(&state, &headers) {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "agentveil_unauthorized",
+            "AgentVeil rejected the local client.",
+            None,
+            None,
+        );
+    }
+    if !content_type_is_json(&headers) || has_unsupported_content_encoding(&headers) {
+        return error_response(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "agentveil_unsupported_encoding",
+            "AgentVeil requires uncompressed application/json requests.",
+            None,
+            None,
+        );
+    }
+    if matches!(state.upstream, UpstreamMode::OpenAi) && !headers.contains_key("authorization") {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "agentveil_upstream_auth_missing",
+            "AgentVeil did not receive required Codex authentication.",
+            None,
+            None,
+        );
+    }
+
+    let event_id = match random_identifier("av_evt_") {
+        Ok(identifier) => identifier,
+        Err(_) => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "agentveil_random_unavailable",
+                "AgentVeil failed closed because secure randomness is unavailable.",
+                None,
+                None,
+            );
+        }
+    };
+    let request_sequence = state.request_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+    let scan_started = Instant::now();
+    let outcome = {
+        let mut engine = state.engine.lock().await;
+        engine.protect(&body, &state.scope, monotonic_ms(&state))
+    };
+    let scan_latency_ms = duration_ms(scan_started.elapsed());
+
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            write_audit(
+                &state,
+                &event_id,
+                request_sequence,
+                AuditDecision::Rejected,
+                None,
+                UpstreamOutcome::NotStarted,
+                scan_latency_ms,
+            );
+            let (status, code) = engine_error_status(&error);
+            return error_response(
+                status,
+                code,
+                "AgentVeil could not safely inspect this Codex request. No request body was sent upstream.",
+                Some(&event_id),
+                Some(0),
+            );
+        }
+    };
+
+    let forward = match outcome {
+        ProtectionOutcome::Blocked(blocked) => {
+            write_audit(
+                &state,
+                &event_id,
+                request_sequence,
+                AuditDecision::Blocked,
+                Some(&blocked.summary),
+                UpstreamOutcome::NotStarted,
+                scan_latency_ms,
+            );
+            return error_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "agentveil_blocked",
+                "AgentVeil blocked this Codex request before it reached the remote model. Remove the credential or replace it with a safe reference.",
+                Some(&event_id),
+                Some(0),
+            );
+        }
+        ProtectionOutcome::Forward(forward) => forward,
+    };
+
+    let target = match upstream_url(&state.upstream, &headers, Route::Responses, None) {
+        Ok(target) => target,
+        Err(_) => {
+            write_audit(
+                &state,
+                &event_id,
+                request_sequence,
+                audit_decision(forward.decision),
+                Some(&forward.summary),
+                UpstreamOutcome::NotStarted,
+                scan_latency_ms,
+            );
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "agentveil_upstream_configuration",
+                "AgentVeil could not select the fixed upstream. No request body was sent upstream.",
+                Some(&event_id),
+                Some(0),
+            );
+        }
+    };
+    let forwarded_headers = forward_request_headers(&headers, &state.upstream, true);
+    let decision = forward.decision;
+    let summary = forward.summary.clone();
+    let forward_body = forward.into_body();
+    let upstream = state
+        .client
+        .post(target)
+        .headers(forwarded_headers)
+        .body(forward_body)
+        .send()
+        .await;
+    match upstream {
+        Ok(upstream) => {
+            write_audit(
+                &state,
+                &event_id,
+                request_sequence,
+                audit_decision(decision),
+                Some(&summary),
+                UpstreamOutcome::Started,
+                scan_latency_ms,
+            );
+            relay_upstream(upstream, Some(state))
+        }
+        Err(_) => {
+            write_audit(
+                &state,
+                &event_id,
+                request_sequence,
+                audit_decision(decision),
+                Some(&summary),
+                UpstreamOutcome::Failed,
+                scan_latency_ms,
+            );
+            error_response(
+                StatusCode::BAD_GATEWAY,
+                "agentveil_upstream_unavailable",
+                "AgentVeil could not reach the fixed upstream.",
+                Some(&event_id),
+                None,
+            )
+        }
+    }
+}
+
+fn relay_upstream(upstream: reqwest::Response, state: Option<Arc<GatewayState>>) -> Response {
+    let status = upstream.status();
+    let response_headers = response_headers(upstream.headers());
+    let is_sse = upstream
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/event-stream"));
+    let restore = state
+        .as_ref()
+        .is_some_and(|state| state.restore_display_text && is_sse);
+    let source = upstream.bytes_stream();
+    let body = if let (true, Some(state)) = (restore, state) {
+        let stream = stream! {
+            let mut source = source;
+            let mut transformer = SseTransformer::default();
+            while let Some(chunk) = source.next().await {
+                let chunk = match chunk {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        yield Err::<Bytes, io::Error>(io::Error::other(error));
+                        return;
+                    }
+                };
+                let now_ms = monotonic_ms(&state);
+                let frames_result = {
+                    let mut engine = state.engine.lock().await;
+                    transformer.push(&chunk, |text| {
+                        engine.restore_display_text(&state.scope, text, now_ms)
+                    })
+                };
+                let frames = match frames_result {
+                    Ok(frames) => frames,
+                    Err(error) => {
+                        yield Err::<Bytes, io::Error>(io::Error::other(error));
+                        return;
+                    }
+                };
+                for frame in frames {
+                    yield Ok::<Bytes, io::Error>(frame);
+                }
+            }
+            if let Err(error) = transformer.finish() {
+                yield Err::<Bytes, io::Error>(io::Error::other(error));
+            }
+        };
+        Body::from_stream(stream)
+    } else {
+        Body::from_stream(source.map(|result| result.map_err(io::Error::other)))
+    };
+    let mut response = Response::builder()
+        .status(status)
+        .body(body)
+        .unwrap_or_else(|_| {
+            error_response(
+                StatusCode::BAD_GATEWAY,
+                "agentveil_response_build",
+                "AgentVeil could not construct the local response.",
+                None,
+                None,
+            )
+        });
+    *response.headers_mut() = response_headers;
+    response
+}
+
+fn write_audit(
+    state: &GatewayState,
+    event_id: &str,
+    request_sequence: u64,
+    decision: AuditDecision,
+    summary: Option<&ProtectionSummary>,
+    upstream_outcome: UpstreamOutcome,
+    scan_latency_ms: u64,
+) {
+    let findings = summary.map_or_else(Vec::new, |summary| {
+        summary
+            .findings
+            .iter()
+            .map(|finding| AuditFinding {
+                detector: finding.detector,
+                data_class: finding.data_class,
+                confidence: finding.confidence,
+                action: finding.action,
+                source_field: finding.source_field,
+                count: finding.count,
+            })
+            .collect()
+    });
+    let event = AuditEvent::new(
+        event_id.to_string(),
+        unix_ms(),
+        state.session_pseudonym.clone(),
+        request_sequence,
+        decision,
+        findings,
+        upstream_outcome,
+        scan_latency_ms,
+        state.policy_name.clone(),
+        state.policy_hash.clone(),
+        VERSION.to_string(),
+    );
+    let result = event
+        .map_err(|_| ())
+        .and_then(|event| state.audit.write(&event).map_err(|_| ()));
+    if result.is_err() {
+        state.audit_healthy.store(false, Ordering::Relaxed);
+        tracing::warn!("AgentVeil audit sink is degraded");
+    }
+}
+
+fn audit_decision(decision: ForwardDecision) -> AuditDecision {
+    match decision {
+        ForwardDecision::Allowed => AuditDecision::Allowed,
+        ForwardDecision::Rewritten => AuditDecision::Rewritten,
+    }
+}
+
+fn authorized(state: &GatewayState, headers: &HeaderMap) -> bool {
+    let Some(candidate) = headers
+        .get(LOCAL_SESSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    if candidate.len() != state.expected_local_token.len() {
+        return false;
+    }
+    bool::from(
+        candidate
+            .as_bytes()
+            .ct_eq(state.expected_local_token.as_bytes()),
+    )
+}
+
+fn content_type_is_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(';').next().is_some_and(|media_type| {
+                media_type.trim().eq_ignore_ascii_case("application/json")
+            })
+        })
+}
+
+fn has_unsupported_content_encoding(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| !value.eq_ignore_ascii_case("identity"))
+}
+
+fn forward_request_headers(
+    source: &HeaderMap,
+    upstream: &UpstreamMode,
+    include_content_type: bool,
+) -> HeaderMap {
+    if matches!(upstream, UpstreamMode::LoopbackTest(_)) {
+        let mut headers = HeaderMap::new();
+        if include_content_type {
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        }
+        headers.insert(
+            HeaderName::from_static("x-agentveil-synthetic"),
+            HeaderValue::from_static("true"),
+        );
+        return headers;
+    }
+    let mut forwarded = HeaderMap::new();
+    for (name, value) in source {
+        let name_string = name.as_str();
+        let allowed = matches!(
+            name_string,
+            "accept"
+                | "authorization"
+                | "chatgpt-account-id"
+                | "content-type"
+                | "openai-beta"
+                | "openai-organization"
+                | "openai-project"
+                | "originator"
+                | "session-id"
+                | "thread-id"
+                | "user-agent"
+                | "x-client-request-id"
+                | "x-openai-internal-codex-responses-lite"
+        ) || name_string.starts_with("x-codex-");
+        if allowed && (include_content_type || name_string != "content-type") {
+            forwarded.append(name.clone(), value.clone());
+        }
+    }
+    forwarded
+}
+
+fn response_headers(source: &HeaderMap) -> HeaderMap {
+    let mut forwarded = HeaderMap::new();
+    for (name, value) in source {
+        let name_string = name.as_str();
+        let allowed = matches!(
+            name_string,
+            "cache-control" | "content-type" | "retry-after" | "x-request-id" | "request-id"
+        ) || name_string.starts_with("x-ratelimit-")
+            || name_string.starts_with("openai-");
+        if allowed {
+            forwarded.append(name.clone(), value.clone());
+        }
+    }
+    forwarded
+}
+
+#[derive(Clone, Copy)]
+enum Route {
+    Responses,
+    Models,
+}
+
+fn upstream_url(
+    upstream: &UpstreamMode,
+    headers: &HeaderMap,
+    route: Route,
+    query: Option<&str>,
+) -> Result<Url, GatewayError> {
+    let mut url = match upstream {
+        UpstreamMode::LoopbackTest(base) => base
+            .join(match route {
+                Route::Responses => "/v1/responses",
+                Route::Models => "/v1/models",
+            })
+            .map_err(|_| GatewayError::UpstreamUrl)?,
+        UpstreamMode::OpenAi => {
+            let chatgpt = headers.contains_key("chatgpt-account-id");
+            Url::parse(match (route, chatgpt) {
+                (Route::Responses, true) => CHATGPT_RESPONSES_URL,
+                (Route::Models, true) => CHATGPT_MODELS_URL,
+                (Route::Responses, false) => API_RESPONSES_URL,
+                (Route::Models, false) => API_MODELS_URL,
+            })
+            .map_err(|_| GatewayError::UpstreamUrl)?
+        }
+    };
+    if let Some(query) = query {
+        url.set_query(Some(query));
+    }
+    Ok(url)
+}
+
+fn validated_models_query(query: Option<&str>) -> Result<Option<&str>, ()> {
+    let Some(query) = query else {
+        return Ok(None);
+    };
+    let Some(value) = query.strip_prefix("client_version=") else {
+        return Err(());
+    };
+    if value.is_empty()
+        || value.len() > 32
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(());
+    }
+    Ok(Some(query))
+}
+
+fn engine_error_status(error: &EngineError) -> (StatusCode, &'static str) {
+    match error {
+        EngineError::Oversize => (StatusCode::PAYLOAD_TOO_LARGE, "agentveil_oversize"),
+        EngineError::Payload(crate::payload::PayloadError::Json(_)) => {
+            (StatusCode::BAD_REQUEST, "agentveil_invalid_json")
+        }
+        EngineError::Payload(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "agentveil_unsupported_payload",
+        ),
+        EngineError::Detector(_)
+        | EngineError::Ledger(_)
+        | EngineError::InvalidRewriteSpan
+        | EngineError::BlockedReachedRewrite => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "agentveil_protection_failure",
+        ),
+    }
+}
+
+fn error_response(
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+    event_id: Option<&str>,
+    forwarded_bytes: Option<u64>,
+) -> Response {
+    (
+        status,
+        axum::Json(ErrorEnvelope {
+            error: ErrorBody {
+                code,
+                message,
+                event_id,
+            },
+            agentveil: forwarded_bytes.map(|protected_request_bytes_forwarded| EnforcementProof {
+                protected_request_bytes_forwarded,
+            }),
+        }),
+    )
+        .into_response()
+}
+
+async fn not_found() -> Response {
+    error_response(
+        StatusCode::NOT_FOUND,
+        "agentveil_route_not_found",
+        "AgentVeil exposes only the verified Codex routes.",
+        None,
+        None,
+    )
+}
+
+fn random_identifier(prefix: &str) -> Result<String, GatewayError> {
+    let mut bytes = [0_u8; 12];
+    getrandom::fill(&mut bytes).map_err(|_| GatewayError::RandomUnavailable)?;
+    let mut identifier = String::with_capacity(prefix.len() + bytes.len() * 2);
+    identifier.push_str(prefix);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut identifier, "{byte:02x}").map_err(|_| GatewayError::Identifier)?;
+    }
+    Ok(identifier)
+}
+
+fn pseudonym(scope: &SessionScope) -> String {
+    let hash = blake3::hash(scope.as_str().as_bytes()).to_hex().to_string();
+    format!("av_session_{}", &hash[..16])
+}
+
+fn monotonic_ms(state: &GatewayState) -> u64 {
+    duration_ms(state.started.elapsed())
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(duration_ms)
+        .unwrap_or(0)
+}
+
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    binding: &'static str,
+    transport: &'static str,
+    upstream: &'static str,
+    restoration: &'static str,
+    audit_healthy: bool,
+}
+
+#[derive(Serialize)]
+struct ErrorEnvelope<'a> {
+    error: ErrorBody<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agentveil: Option<EnforcementProof>,
+}
+
+#[derive(Serialize)]
+struct ErrorBody<'a> {
+    code: &'static str,
+    message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_id: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct EnforcementProof {
+    protected_request_bytes_forwarded: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum GatewayError {
+    #[error("gateway must bind to loopback")]
+    NonLoopbackBind,
+    #[error("local session token is invalid")]
+    InvalidLocalSessionToken,
+    #[error("test upstream must be an unauthenticated loopback HTTP URL")]
+    UnsafeTestUpstream,
+    #[error("live restoration is not verified and remains disabled")]
+    LiveRestorationNotVerified,
+    #[error("HTTP client initialization failed")]
+    HttpClient,
+    #[error("gateway bind failed")]
+    Bind,
+    #[error("gateway server failed")]
+    Serve,
+    #[error("upstream URL construction failed")]
+    UpstreamUrl,
+    #[error("secure randomness is unavailable")]
+    RandomUnavailable,
+    #[error("safe identifier construction failed")]
+    Identifier,
+    #[error("privacy engine initialization failed")]
+    Engine(#[from] EngineError),
+    #[error("audit sink initialization failed")]
+    Audit(#[from] AuditSinkError),
+}
