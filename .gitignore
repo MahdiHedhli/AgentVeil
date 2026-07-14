@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+/target/
+/dist/
+/runtime/
+/reports/generated/
+*.audit.jsonl
+*.ledger
+*.capture
+*.pem
+*.key
+auth.json
+config.toml.bak*
+.agentveil/
